@@ -1,0 +1,57 @@
+---
+alwaysApply: true
+---
+Models Created:
+1. User Model (extends Authenticatable)
+Features:
+
+✅ Full authentication support (password hashing, remember token)
+✅ Role-based methods: isAdmin(), isMediator()
+✅ Scopes: admins(), mediators()
+✅ full_name accessor
+✅ Relationships: created sessions, assigned sessions
+
+2. Client Model
+Features:
+
+✅ Financial calculations: total_assets, total_liabilities, net_worth
+✅ full_name accessor
+✅ times_scheduled attribute (counts sessions)
+✅ Search scope by name
+✅ Filter scopes: byPeriod(), byDateRange(), withArrears(), withLoans()
+✅ Relationship to sessions
+
+3. MediationSession Model
+Features:
+
+✅ Auto-generates session numbers: MED-20241128-0001
+✅ Date scopes: upcoming(), past(), today()
+✅ Status checks: is_today, is_upcoming, is_past
+✅ Count accessors: client_count, mediator_count
+✅ Relationships: creator, clients, mediators
+
+4. SessionClient Model (Pivot)
+Custom pivot table model for session ↔ client relationships
+5. SessionMediator Model (Pivot)
+Custom pivot table model for session ↔ mediator relationships
+
+Key Features Implemented:
+Computed Attributes:
+$client->full_name;        // "Juan Dela Cruz"
+$client->total_assets;     // Sum of deposits + savings
+$client->net_worth;        // Assets - liabilities
+$client->times_scheduled;  // Count of sessions
+$session->client_count;    // How many clients
+$session->is_upcoming;     // Boolean check
+
+Powerful Scopes:
+Client::search('Juan')->get();
+Client::withArrears()->byPeriod('2024-Q4')->get();
+MediationSession::upcoming()->with('clients')->get();
+User::mediators()->get();
+
+Auto-Generated Session Numbers:
+Every session automatically gets a unique number like:
+MED-20241128-0001
+MED-20241128-0002
+Format: MED-{DATE}-{COUNTER}

@@ -1,0 +1,51 @@
+---
+alwaysApply: true
+---
+
+FRONTEND COMPONENTS
+
+1. Main Dashboard Layout
+- Header with app title and logout button
+- Search bar with real-time filtering
+- Filter dropdown (by mediator, period, status)
+- Import/Export buttons (top-right)
+- Data table (main content area)
+- Client details sidebar (collapsible)
+
+2. Client Table Component
+// Required features:
+- Sortable columns (name, date, amounts)
+- Pagination (20 items per page)
+- Row click opens sidebar
+- Highlight selected row
+- Loading states
+- Empty state message
+
+3. Client Sidebar Component
+// Display sections:
+- Client basic info (name, ID)
+- Financial overview (grid layout)
+- Times scheduled counter
+- Remarks history (scrollable)
+- Add/Edit remark form
+- Schedule session button
+- Close sidebar button
+
+4. Admin Dashboard
+// Features:
+- Separate route (/admin)
+- Mediator CRUD table
+- Client manual entry form
+- System statistics cards
+- Access control (admin role only)
+
+5. Login Interface Design
+// Requirements:
+ - Minimal login form (email + password)
+ - Proper error handling (display backend errors, invalid credentials, and validation issues)
+ - Simple "Login" button
+ - Loading state for submission
+ - Success redirects to dashboard on valid login
+ - If already logged in, auto-redirect to dashboard
+ - No registration or password reset (admin-controlled users only)
+ - Show generic error for unexpected issues, specific feedback for validation/login errors

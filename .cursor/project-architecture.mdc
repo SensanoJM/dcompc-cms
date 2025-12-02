@@ -1,0 +1,48 @@
+---
+alwaysApply: true
+---
+1.1 Technology Stack
+
+Backend: Laravel 12 (PHP 8.3+)
+Frontend: React 18+ with JavaScript
+UI Components: Shadcn/ui
+Styling: Tailwind CSS (via Shadcn)
+Database: SQLite (single file database)
+Package Manager: npm (frontend), Composer (backend)
+Build Tool: Vite (Laravel default)
+
+1.2 Project Structure
+mediation-tracker/
+├── app/
+│   ├── Http/Controllers/
+│   │   ├── ClientController.php         (handles all client operations)
+│   │   ├── SessionController.php        (mediation sessions)
+│   │   ├── AdminController.php          (user management)
+│   │   └── ExcelController.php          (import/export only)
+│   ├── Models/                          (keep our 5 models)
+│   ├── Services/
+│   │   ├── ExcelService.php             (merged import/export)
+│   │   └── SessionService.php           (business logic)
+├── resources/
+│   ├── js/
+│   │   ├── Components/
+│   │   │   ├── ui/                      (shadcn)
+│   │   │   ├── ClientTable.jsx
+│   │   │   ├── ClientSidebar.jsx
+│   │   │   └── SessionForm.jsx
+│   │   ├── Pages/
+│   │   │   ├── Dashboard.jsx            (main mediator view)
+│   │   │   ├── Login.jsx                (login panel)
+│   │   │   ├── Admin/Dashboard.jsx      (admin panel)
+│   │   │   └── Auth/Login.jsx
+│   │   ├── Layouts/
+│   │   │   └── AppLayout.jsx            (shared layout)
+│   │   └── app.jsx                      (Inertia setup)
+├── routes/
+    └── web.php                          (single route file)
+1.3 Database Configuration
+
+Use SQLite for portability and zero-config deployment
+Database file location: database/database.sqlite
+Automatic creation on first migration
+No separate database server required
