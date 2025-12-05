@@ -13,8 +13,8 @@ class Client extends Model
     protected $primaryKey = 'client_id';
 
     protected $fillable = [
-        'first_name',
-        'last_name',
+        'client_id',
+        'name',
         'fixed_deposit',
         'savings',
         'loan_balance',
@@ -38,7 +38,7 @@ class Client extends Model
     // Accessor for full name
     public function getFullNameAttribute(): string
     {
-        return "{$this->first_name} {$this->last_name}";
+        return $this->name;
     }
 
     // Accessor for total assets
@@ -63,8 +63,9 @@ class Client extends Model
     public function scopeSearch($query, $search)
     {
         return $query->where(function ($q) use ($search) {
-            $q->where('first_name', 'LIKE', "%{$search}%")
-              ->orWhere('last_name', 'LIKE', "%{$search}%");
+            $q->where('name', 'LIKE', "%{$search}%")
+              ->orWhere('client_id', $search)
+              ->orWhere('period', 'LIKE', "%{$search}%");
         });
     }
 

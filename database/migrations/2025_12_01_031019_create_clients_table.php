@@ -12,9 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('clients', function (Blueprint $table) {
-            $table->id('client_id');
-            $table->string('first_name');
-            $table->string('last_name');
+            // primary key
+            $table->bigIncrements('client_uuid');
+
+            // external client identifier
+            $table->bigInteger('client_id')->unique();
+
+            $table->string('name');
             $table->decimal('fixed_deposit', 15, 2)->default(0.00);
             $table->decimal('savings', 15, 2)->default(0.00);
             $table->decimal('loan_balance', 15, 2)->default(0.00);
@@ -24,10 +28,10 @@ return new class extends Migration
             $table->date('uploaded_date')->default(DB::raw('CURRENT_DATE'));
             $table->string('period')->nullable();
             $table->timestamps();
-            
+
             // Indexes
             $table->index('period', 'idx_clients_period');
-            $table->index(['first_name', 'last_name'], 'idx_clients_name');
+            $table->index(['name'], 'idx_clients_name');
         });
     }
 

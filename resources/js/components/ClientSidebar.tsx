@@ -8,8 +8,7 @@ import { Input } from './ui/input';
 // file for frontend types, move these definitions there and import them.
 export interface Client {
     client_id: number;
-    first_name: string;
-    last_name: string;
+    name: string;
     period: string;
     savings: number;
     fixed_deposit: number;
@@ -70,7 +69,7 @@ export default function ClientSidebar({ client, isOpen, onClose }: ClientSidebar
                     {/* Header */}
                     <div className="flex items-center justify-between p-6 border-b border-border">
                         <div>
-                            <h2 className="text-xl font-semibold tracking-tight">{client.first_name} {client.last_name}</h2>
+                            <h2 className="text-xl font-semibold tracking-tight">{client.name}</h2>
                             <p className="text-sm text-muted-foreground">ID: #{client.client_id} • Period: {client.period}</p>
                         </div>
                         <Button variant="ghost" size="icon" onClick={onClose}>

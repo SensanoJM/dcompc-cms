@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, ChevronDown, ChevronUp } from 'lucide-react';
 import ClientSidebar from './ClientSidebar';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import axios from 'axios';
 
 type Client = {
     client_id: number;
-    first_name: string;
-    last_name: string;
+    name: string;
     period: string;
     savings: number;
     fixed_deposit: number;
@@ -33,13 +33,48 @@ export default function ClientTable() {
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [totalCount, setTotalCount] = useState(0);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const openFilePicker = () => fileInputRef.current?.click();
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        setLoading(true);
+        try {
+            const fd = new FormData();
+            fd.append('file', f);
+
+            const res = await axios.post('/api/excel/import', fd, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+
+            if (res.data.success) {
+                window.alert(`Import finished. Imported: ${res.data.data.imported || 0}, Failed: ${res.data.data.failed || 0}`);
+                setPage(1);
+                fetchClients();
+            } else {
+                console.error('Import failed', res.data);
+                window.alert(res.data.message || 'Import failed');
+            }
+        } catch (err: any) {
+            console.error(err);
+            window.alert(err.response?.data?.message || 'Import error');
+        } finally {
+            setLoading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
 
     const fetchClients = async () => {
         setLoading(true);
         try {
             // map frontend sort keys to server columns
             const sortMap: Record<string, string> = {
-                name: 'first_name',
+                client_id: 'client_id',
+                name: 'name',
                 period: 'period',
                 savings: 'savings',
                 loan_balance: 'loan_balance',
@@ -53,12 +88,9 @@ export default function ClientTable() {
             params.append('sort_by', sortMap[sortKey] || 'created_at');
             params.append('sort_order', sortDir);
 
-            const res = await fetch(`/api/clients?${params.toString()}`, { headers: { 'Accept': 'application/json' } });
-            if (!res.ok) throw new Error('Failed to fetch');
-            const json = await res.json();
-            // json should be paginator structure
-            setClients(json.data || []);
-            setTotalCount(json.total || 0);
+            const res = await axios.get(`/api/clients?${params.toString()}`);
+            setClients(res.data.data || []);
+            setTotalCount(res.data.total || 0);
         } catch (err) {
             console.error(err);
             setClients([]);
@@ -94,14 +126,11 @@ export default function ClientTable() {
     const handleRowClick = async (c: Client) => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/clients/${c.client_id}`, { headers: { 'Accept': 'application/json' } });
-            if (res.ok) {
-                const json = await res.json();
-                // existing controller returns { success: true, client: { ... } }
-                setSelectedClient(json.client || c);
-            } else {
-                setSelectedClient(c);
-            }
+            const res = await axios.get(`/api/clients/${c.client_id}`);
+            // existing controller returns { success: true, client: { ... } }
+            // or just the client object depending on implementation. 
+            // Based on previous code: json.client
+            setSelectedClient(res.data.client || c);
         } catch (err) {
             console.error(err);
             setSelectedClient(c);
@@ -113,6 +142,14 @@ export default function ClientTable() {
 
     return (
         <div className="w-full">
+            {/* hidden file input for import */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleFileChange}
+            />
             <div className="flex items-center justify-between mb-4 gap-4">
                 <div className="flex items-center gap-2 w-full max-w-md">
                     <Input
@@ -125,6 +162,9 @@ export default function ClientTable() {
                 </div>
                 <div className="flex items-center gap-2">
                     <div className="text-sm text-muted-foreground">{loading ? 'Loading...' : `${totalCount} clients`}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={openFilePicker} disabled={loading}>Import Data</Button>
                 </div>
             </div>
 
@@ -167,7 +207,7 @@ export default function ClientTable() {
                                     onClick={() => handleRowClick(c)}
                                     className={`cursor-pointer hover:bg-muted/10 ${selectedClient?.client_id === c.client_id ? 'bg-muted/20' : ''}`}
                                 >
-                                    <td className="px-4 py-3">{c.first_name} {c.last_name} <div className="text-xs text-muted-foreground">ID: #{c.client_id}</div></td>
+                                    <td className="px-4 py-3">{c.name} <div className="text-xs text-muted-foreground">ID: #{c.client_id}</div></td>
                                     <td className="px-4 py-3">{c.period}</td>
                                     <td className="px-4 py-3 text-right font-semibold">{formatCurrency(c.savings)}</td>
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.loan_balance)}</td>
@@ -203,4 +243,3 @@ export default function ClientTable() {
         </div>
     );
 }
-

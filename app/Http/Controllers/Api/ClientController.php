@@ -24,8 +24,7 @@ class ClientController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('first_name', 'LIKE', "%{$search}%")
-                  ->orWhere('last_name', 'LIKE', "%{$search}%")
+                $q->where('name', 'LIKE', "%{$search}%")
                   ->orWhere('client_id', $search)
                   ->orWhere('period', 'LIKE', "%{$search}%");
             });
@@ -46,11 +45,9 @@ class ClientController extends Controller
 
         // Sorting: map friendly keys to columns
         $sortBy = $request->get('sort_by', 'created_at');
-        $allowed = ['first_name', 'period', 'savings', 'loan_balance', 'arrears', 'created_at'];
+        $allowed = ['name', 'period', 'savings', 'loan_balance', 'arrears', 'created_at'];
         if (!in_array($sortBy, $allowed)) {
-            // allow 'name' as alias to first_name
-            if ($sortBy === 'name') $sortBy = 'first_name';
-            else $sortBy = 'created_at';
+            $sortBy = 'created_at';
         }
 
         $sortOrder = $request->get('sort_order', 'desc') === 'asc' ? 'asc' : 'desc';

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Client;
+use Inertia\Inertia;
 
 class ClientController extends Controller
 {
@@ -72,9 +74,7 @@ class ClientController extends Controller
             'success' => true,
             'client' => [
                 'client_id' => $client->client_id,
-                'full_name' => $client->full_name,
-                'first_name' => $client->first_name,
-                'last_name' => $client->last_name,
+                'name' => $client->name,
                 'fixed_deposit' => $client->fixed_deposit,
                 'savings' => $client->savings,
                 'loan_balance' => $client->loan_balance,
@@ -99,14 +99,14 @@ class ClientController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'fixed_deposit' => 'nullable|numeric|min:0',
-            'savings' => 'nullable|numeric|min:0',
-            'loan_balance' => 'nullable|numeric|min:0',
-            'arrears' => 'nullable|numeric|min:0',
-            'fines' => 'nullable|numeric|min:0',
-            'mortuary' => 'nullable|numeric|min:0',
+            'client_id' => 'required|unique:clients,client_id|integer',
+            'name' => 'required|string|max:255',
+            'fixed_deposit' => 'nullable|numeric',
+            'savings' => 'nullable|numeric',
+            'loan_balance' => 'nullable|numeric',
+            'arrears' => 'nullable|numeric',
+            'fines' => 'nullable|numeric',
+            'mortuary' => 'nullable|numeric',
             'uploaded_date' => 'nullable|date',
             'period' => 'nullable|string|max:255',
         ]);
@@ -131,14 +131,14 @@ class ClientController extends Controller
         $client = Client::findOrFail($id);
 
         $validated = $request->validate([
-            'first_name' => 'sometimes|required|string|max:255',
-            'last_name' => 'sometimes|required|string|max:255',
-            'fixed_deposit' => 'nullable|numeric|min:0',
-            'savings' => 'nullable|numeric|min:0',
-            'loan_balance' => 'nullable|numeric|min:0',
-            'arrears' => 'nullable|numeric|min:0',
-            'fines' => 'nullable|numeric|min:0',
-            'mortuary' => 'nullable|numeric|min:0',
+            'client_id' => 'required|numeric',
+            'name' => 'sometimes|required|string|max:255',
+            'fixed_deposit' => 'nullable|numeric',
+            'savings' => 'nullable|numeric',
+            'loan_balance' => 'nullable|numeric',
+            'arrears' => 'nullable|numeric',
+            'fines' => 'nullable|numeric',
+            'mortuary' => 'nullable|numeric',
             'period' => 'nullable|string|max:255',
         ]);
 

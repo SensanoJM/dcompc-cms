@@ -37,7 +37,7 @@ Custom pivot table model for session ↔ mediator relationships
 
 Key Features Implemented:
 Computed Attributes:
-$client->full_name;        // "Juan Dela Cruz"
+$client->name;        // "Juan Dela Cruz"
 $client->total_assets;     // Sum of deposits + savings
 $client->net_worth;        // Assets - liabilities
 $client->times_scheduled;  // Count of sessions
