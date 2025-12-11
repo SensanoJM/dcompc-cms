@@ -43,7 +43,18 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user() 
+                    ? $request->user() 
+                    : [
+                        'id' => 0,
+                        'name' => 'Mediator',
+                        'email' => 'mediator@system',
+                        'email_verified_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                        'two_factor_enabled' => false,
+                        'avatar' => '',
+                    ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

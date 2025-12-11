@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\ClientFinancialRecord;
 use Spatie\SimpleExcel\SimpleExcelReader;
 use Spatie\SimpleExcel\SimpleExcelWriter;
 use Illuminate\Support\Collection;
@@ -31,8 +32,6 @@ class ExcelService
         $rows->each(function(array $row, int $index) use (&$imported, &$failed, &$errors) {
             // Skip the first row (header)
             if ($index === 0) {
-                // Log the header row to see what we're dealing with
-                Log::info('Import Header Row:', $row);
                 return;
             }
 
@@ -43,18 +42,29 @@ class ExcelService
                 return;
             }
 
-            // Log the first data row to debug mapping
-            if ($index === 1) {
-                Log::info('First Data Row:', $row);
-            }
+            // Map row data
+            $data = $this->mapRowToData($rowCollection);
+            $clientData = $data['client'];
+            $financialData = $data['financial'];
 
-            // Map row data to client fields
-            $clientData = $this->mapRowToClient($rowCollection);
-
-            // Validate data
-            $validator = Validator::make($clientData, [
+            // Validate foundational client data
+            $clientValidator = Validator::make($clientData, [
                 'client_id' => 'required|numeric',
                 'name' => 'required|string|max:255',
+            ]);
+
+            if ($clientValidator->fails()) {
+                $failed++;
+                $errors[] = [
+                    'row' => $index + 1,
+                    'errors' => $clientValidator->errors()->all()
+                ];
+                return;
+            }
+
+            // Validate financial data
+            $financialValidator = Validator::make($financialData, [
+                'period' => 'required|string|max:255',
                 'fixed_deposit' => 'nullable|numeric',
                 'savings' => 'nullable|numeric',
                 'loan_balance' => 'nullable|numeric',
@@ -62,25 +72,32 @@ class ExcelService
                 'fines' => 'nullable|numeric',
                 'mortuary' => 'nullable|numeric',
                 'uploaded_date' => 'nullable|date',
-                'period' => 'nullable|string|max:255',
+                // 'assigned_mediator' => 'nullable|string|max:255', // Removed from import
             ]);
 
-            if ($validator->fails()) {
+             if ($financialValidator->fails()) {
                 $failed++;
-                $rowErrors = $validator->errors()->all();
                 $errors[] = [
-                    'row' => $index + 1, // 1-based index (Excel row number)
-                    'errors' => $rowErrors
+                    'row' => $index + 1,
+                    'errors' => $financialValidator->errors()->all()
                 ];
-                // Log the error for the first failure
-                if ($failed === 1) {
-                    Log::error('Validation Error Row ' . ($index + 1) . ':', ['data' => $clientData, 'errors' => $rowErrors]);
-                }
                 return;
             }
 
             try {
-                Client::create($clientData);
+                // 1. Create or Update Client
+                $client = Client::updateOrCreate(
+                    ['client_id' => $clientData['client_id']],
+                    ['name' => $clientData['name']]
+                );
+
+                // 2. Create or Update Financial Record for this Period
+                // We use updateOrCreate to avoid duplicates for the same client+period
+                $client->financialRecords()->updateOrCreate(
+                    ['period' => $financialData['period']],
+                    $financialData
+                );
+
                 $imported++;
             } catch (\Exception $e) {
                 $failed++;
@@ -100,37 +117,43 @@ class ExcelService
     }
 
     /**
-     * Map Excel row to client data array
-     * Expected columns: Client ID, Name, Fixed Deposit, Savings, Loan Balance, 
-     *                   Arrears, Fines, Mortuary, Date, Period
+     * Map Excel row to data arrays for Client and FinancialRecord
      */
-    private function mapRowToClient(Collection $row): array
+    private function mapRowToData(Collection $row): array
     {
-        // Safely get columns as strings
+        // Safely get columns
         $col0 = $this->safeString($row[0] ?? '');
         $col1 = $this->safeString($row[1] ?? '');
 
-        // If the user added Client ID at index 0, then Name is at index 1.
+        // Logic for ID vs Name columns
         $clientId = is_numeric($col0) ? $col0 : null;
         $name = $col1;
 
         if (empty($name) && !empty($col0) && !is_numeric($col0)) {
-            // Maybe column 0 is name?
             $name = $col0;
         }
 
-        return [
-            'client_id' => $clientId,
-            'name' => $name,
-            'fixed_deposit' => $this->parseNumeric($row[2] ?? 0),
-            'savings' => $this->parseNumeric($row[3] ?? 0),
-            'loan_balance' => $this->parseNumeric($row[4] ?? 0),
-            'arrears' => $this->parseNumeric($row[5] ?? 0),
-            'fines' => $this->parseNumeric($row[6] ?? 0),
-            'mortuary' => $this->parseNumeric($row[7] ?? 0),
-            'uploaded_date' => $this->parseDate($row[8] ?? now()),
-            'period' => $this->safeString($row[9] ?? null),
+        $data = [
+            'client' => [
+                'client_id' => $clientId,
+                'name' => $name,
+            ],
+            'financial' => [
+                'fixed_deposit' => $this->parseNumeric($row[2] ?? 0),
+                'savings' => $this->parseNumeric($row[3] ?? 0),
+                'loan_balance' => $this->parseNumeric($row[4] ?? 0),
+                'arrears' => $this->parseNumeric($row[5] ?? 0),
+                'fines' => $this->parseNumeric($row[6] ?? 0),
+                'mortuary' => $this->parseNumeric($row[7] ?? 0),
+                'uploaded_date' => $this->parseDate($row[8] ?? now()),
+                'period' => $this->safeString($row[9] ?? 'Default'),
+                'assigned_mediator' => $this->safeString($row[10] ?? null),
+            ]
         ];
+
+        Log::info('Mapped Row Data:', $data);
+
+        return $data;
     }
 
     /**
@@ -198,27 +221,30 @@ class ExcelService
      */
     public function exportClients(array $filters = [])
     {
-        $query = Client::query();
+        // Join with financial records to filter and select columns
+        $query = Client::query()
+            ->join('client_financial_records', 'clients.client_id', '=', 'client_financial_records.client_id')
+            ->select('clients.client_id', 'clients.name', 'client_financial_records.*');
 
-        // Apply filters (same as ClientController)
+        // Apply filters
         if (!empty($filters['search'])) {
-            $query->search($filters['search']);
+            $query->where('clients.name', 'LIKE', "%{$filters['search']}%");
         }
 
         if (!empty($filters['period'])) {
-            $query->byPeriod($filters['period']);
+            $query->where('client_financial_records.period', $filters['period']);
         }
 
         if (!empty($filters['date_from']) && !empty($filters['date_to'])) {
-            $query->byDateRange($filters['date_from'], $filters['date_to']);
+            $query->whereBetween('client_financial_records.uploaded_date', [$filters['date_from'], $filters['date_to']]);
         }
 
         if (!empty($filters['with_arrears'])) {
-            $query->withArrears();
+            $query->where('client_financial_records.arrears', '>', 0);
         }
 
         if (!empty($filters['with_loans'])) {
-            $query->withLoans();
+            $query->where('client_financial_records.loan_balance', '>', 0);
         }
 
         $filename = 'clients_export_' . now()->format('Y-m-d_His') . '.xlsx';
@@ -228,7 +254,7 @@ class ExcelService
         $writer->addRow([
             'Client ID', 'Name', 'Fixed Deposit', 'Savings', 'Loan Balance', 
             'Arrears', 'Fines', 'Mortuary', 'Date Uploaded', 'Period', 
-            'Total Assets', 'Total Liabilities', 'Net Worth', 'Times Scheduled'
+            'Assigned Mediator'
         ]);
 
         $query->chunk(1000, function ($clients) use ($writer) {
@@ -242,12 +268,9 @@ class ExcelService
                     number_format($client->arrears, 2),
                     number_format($client->fines, 2),
                     number_format($client->mortuary, 2),
-                    $client->uploaded_date ? $client->uploaded_date->format('Y-m-d') : '',
+                    $client->uploaded_date ? Carbon::parse($client->uploaded_date)->format('Y-m-d') : '',
                     $client->period,
-                    number_format($client->total_assets, 2),
-                    number_format($client->total_liabilities, 2),
-                    number_format($client->net_worth, 2),
-                    $client->times_scheduled,
+                    $client->assigned_mediator ?? '',
                 ]);
             }
         });
@@ -263,8 +286,8 @@ class ExcelService
         $writer = SimpleExcelWriter::streamDownload('clients_import_template.xlsx');
         
         $writer->addRows([
-            ['Client ID', 'Name', 'Fixed Deposit', 'Savings', 'Loan Balance', 'Arrears', 'Fines', 'Mortuary', 'Date', 'Period'],
-            ['1001', 'Juan Dela Cruz', '10000.00', '5000.00', '15000.00', '500.00', '100.00', '200.00', '2024-01-15', '2024-Q1'],
+            ['Client ID', 'Name', 'Fixed Deposit', 'Savings', 'Loan Balance', 'Arrears', 'Fines', 'Mortuary', 'Date', 'Period', 'Mediator'],
+            ['1001', 'Juan Dela Cruz', '10000.00', '5000.00', '15000.00', '500.00', '100.00', '200.00', '2024-01-15', '2024-Q1', 'Mediator A'],
         ]);
 
         return $writer->toBrowser();

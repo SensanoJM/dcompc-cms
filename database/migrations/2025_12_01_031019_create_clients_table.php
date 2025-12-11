@@ -19,18 +19,9 @@ return new class extends Migration
             $table->bigInteger('client_id')->unique();
 
             $table->string('name');
-            $table->decimal('fixed_deposit', 15, 2)->default(0.00);
-            $table->decimal('savings', 15, 2)->default(0.00);
-            $table->decimal('loan_balance', 15, 2)->default(0.00);
-            $table->decimal('arrears', 15, 2)->default(0.00);
-            $table->decimal('fines', 15, 2)->default(0.00);
-            $table->decimal('mortuary', 15, 2)->default(0.00);
-            $table->date('uploaded_date')->default(DB::raw('CURRENT_DATE'));
-            $table->string('period')->nullable();
             $table->timestamps();
 
             // Indexes
-            $table->index('period', 'idx_clients_period');
             $table->index(['name'], 'idx_clients_name');
         });
     }

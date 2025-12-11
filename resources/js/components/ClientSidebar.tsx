@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
-import { X, Calendar, DollarSign, Clock, Plus, History } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Calendar, DollarSign, Clock, Plus, History, User, Check, FilePenLine } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import axios from 'axios';
 
-// Local frontend types for Client and Remark. These are intentionally minimal
-// and mirror the fields used by this component. If you have a shared types
-// file for frontend types, move these definitions there and import them.
-export interface Client {
-    client_id: number;
-    name: string;
+// Extended Client type to include financial history
+export interface ClientFinancialRecord {
     period: string;
     savings: number;
     fixed_deposit: number;
@@ -16,11 +20,27 @@ export interface Client {
     arrears: number;
     fines: number;
     mortuary: number;
+    assigned_mediator?: string;
+    uploaded_date?: string;
+}
+
+export interface Client {
+    client_id: number;
+    name: string;
+    period: string; // Current/Latest period
+    savings: number;
+    fixed_deposit: number;
+    loan_balance: number;
+    arrears: number;
+    fines: number;
+    mortuary: number;
+    assigned_mediator?: string;
+    financial_records?: ClientFinancialRecord[];
 }
 
 export interface Remark {
     id: number;
-    date: string; // ISO date or human readable
+    date: string;
     text: string;
     author: string;
 }
@@ -39,13 +59,64 @@ const MOCK_REMARKS: Remark[] = [
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
-        currency: 'USD',
+        currency: 'PHP', // Changed to PHP as per context
     }).format(value);
 };
 
 export default function ClientSidebar({ client, isOpen, onClose }: ClientSidebarProps) {
     const [remarks, setRemarks] = useState<Remark[]>(MOCK_REMARKS);
     const [newRemark, setNewRemark] = useState('');
+
+    // Period filtering state
+    const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
+
+    // State for local edits
+    const [mediator, setMediator] = useState<string>('');
+    const [isEditingMediator, setIsEditingMediator] = useState(false);
+
+    // Sync state when client changes
+    useEffect(() => {
+        if (client) {
+            // Find assigned mediator for the MAIN valid period (usually the single selected or last)
+            const currentPeriod = selectedPeriods[selectedPeriods.length - 1] || client.period;
+            const record = client.financial_records?.find(r => r.period === currentPeriod);
+            setMediator(record?.assigned_mediator || '');
+        }
+    }, [client, selectedPeriods]);
+
+    const handleSaveMediator = async () => {
+        if (!client) return;
+
+        try {
+            const currentPeriod = selectedPeriods[selectedPeriods.length - 1] || client.period;
+
+            await axios.put(`/api/clients/${client.client_id}`, {
+                ...client,
+                period: currentPeriod,
+                assigned_mediator: mediator
+            });
+
+            setIsEditingMediator(false);
+        } catch (error) {
+            console.error("Failed to update mediator", error);
+        }
+    };
+
+    // Reset selection when client changes
+    useEffect(() => {
+        if (client && client.financial_records && client.financial_records.length > 0) {
+            // Default to the period of the client record passed (which matches the table filter)
+            // or the latest one.
+            if (client.period) {
+                setSelectedPeriods([client.period]);
+            } else {
+                setSelectedPeriods([client.financial_records[0].period]);
+            }
+        } else if (client) {
+            // No history loaded yet? Just use main client data
+            setSelectedPeriods([client.period]);
+        }
+    }, [client]);
 
     const handleAddRemark = () => {
         if (!newRemark.trim()) return;
@@ -59,26 +130,146 @@ export default function ClientSidebar({ client, isOpen, onClose }: ClientSidebar
         setNewRemark('');
     };
 
+    // Calculate displayed data based on selectedPeriods
+    const displayData = useMemo(() => {
+        if (!client) return null;
+        if (!client.financial_records || client.financial_records.length === 0) {
+            return client; // Fallback to main client object
+        }
+
+        // Filter records
+        const records = client.financial_records.filter(r => selectedPeriods.includes(r.period));
+
+        if (records.length === 0) return client; // Should not happen if selection valid
+
+        // Accumulate
+        const acc = {
+            savings: 0,
+            fixed_deposit: 0,
+            loan_balance: 0,
+            arrears: 0,
+            fines: 0,
+            mortuary: 0,
+        };
+
+        const mediators = new Set<string>();
+
+        records.forEach(r => {
+            acc.savings += Number(r.savings) || 0;
+            acc.fixed_deposit += Number(r.fixed_deposit) || 0;
+            acc.loan_balance += Number(r.loan_balance) || 0;
+            acc.arrears += Number(r.arrears) || 0;
+            acc.fines += Number(r.fines) || 0;
+            acc.mortuary += Number(r.mortuary) || 0;
+            if (r.assigned_mediator) mediators.add(r.assigned_mediator);
+        });
+
+        return {
+            ...client, // Keep name, id
+            ...acc,
+            items_count: records.length,
+            assigned_mediator: mediators.size > 0 ? Array.from(mediators).join(', ') : 'None'
+        };
+    }, [client, selectedPeriods]);
+
+    const availablePeriods = useMemo(() => {
+        if (!client?.financial_records) return [];
+        return client.financial_records.map(r => r.period);
+    }, [client]);
+
+    const togglePeriod = (p: string) => {
+        if (selectedPeriods.includes(p)) {
+            // Don't allow empty selection, keep at least one
+            if (selectedPeriods.length > 1) {
+                setSelectedPeriods(selectedPeriods.filter(x => x !== p));
+            }
+        } else {
+            setSelectedPeriods([...selectedPeriods, p]);
+        }
+    };
+
     return (
         <div
             className={`fixed inset-y-0 right-0 z-50 w-[400px] bg-background shadow-2xl transition-transform duration-300 ease-in-out border-l border-border flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'
                 }`}
         >
-            {client ? (
+            {client && displayData ? (
                 <>
                     {/* Header */}
                     <div className="flex items-center justify-between p-6 border-b border-border">
                         <div>
                             <h2 className="text-xl font-semibold tracking-tight">{client.name}</h2>
-                            <p className="text-sm text-muted-foreground">ID: #{client.client_id} • Period: {client.period}</p>
+                            <p className="text-sm text-muted-foreground">ID: #{client.client_id}</p>
                         </div>
                         <Button variant="ghost" size="icon" onClick={onClose}>
                             <X className="h-5 w-5" />
                         </Button>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-4 text-sm mt-4 p-4 bg-muted/50 rounded-lg">
+                        <div>
+                            <span className="text-muted-foreground">Period:</span>
+                            <div className="font-medium">{selectedPeriods.join(', ')}</div>
+                        </div>
+                        <div>
+                            <span className="text-muted-foreground">Assigned Mediator:</span>
+                            {isEditingMediator ? (
+                                <div className="flex items-center gap-2">
+                                    <Select value={mediator} onValueChange={setMediator}>
+                                        <SelectTrigger className="h-8 w-full">
+                                            <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ASVILLA">ASVILLA</SelectItem>
+                                            <SelectItem value="MGENOVA">MGENOVA</SelectItem>
+                                            <SelectItem value="RGERASTRA">RGERASTRA</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <Button size="sm" variant="ghost" onClick={handleSaveMediator} className="h-8 w-8 p-0">
+                                        <Check className="h-4 w-4 text-green-500" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setIsEditingMediator(false)} className="h-8 w-8 p-0">
+                                        <X className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between font-medium">
+                                    <span>{mediator || 'None'}</span>
+                                    <Button size="sm" variant="ghost" onClick={() => setIsEditingMediator(true)} className="h-6 w-6 p-0 ml-2">
+                                        <FilePenLine className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     {/* Scrollable Content */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-8">
+
+                        {/* Period Filter */}
+                        {availablePeriods.length > 0 && (
+                            <div>
+                                <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+                                    <History className="h-4 w-4" /> Filter Periods (Accumulate)
+                                </h3>
+                                <div className="flex flex-wrap gap-2">
+                                    {availablePeriods.map(p => (
+                                        <button
+                                            key={p}
+                                            onClick={() => togglePeriod(p)}
+                                            className={`text-xs px-2 py-1 rounded border ${selectedPeriods.includes(p) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-input'}`}
+                                        >
+                                            {p}
+                                        </button>
+                                    ))}
+                                </div>
+                                {selectedPeriods.length > 1 && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Showing accumulated values for {selectedPeriods.length} periods.
+                                    </p>
+                                )}
+                            </div>
+                        )}
 
                         {/* Quick Actions */}
                         <div className="grid grid-cols-2 gap-3">
@@ -100,27 +291,27 @@ export default function ClientSidebar({ client, isOpen, onClose }: ClientSidebar
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Savings</p>
-                                    <p className="text-lg font-bold text-green-600">{formatCurrency(client.savings)}</p>
+                                    <p className="text-lg font-bold text-green-600">{formatCurrency(displayData.savings)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Fixed Deposit</p>
-                                    <p className="text-lg font-bold text-blue-600">{formatCurrency(client.fixed_deposit)}</p>
+                                    <p className="text-lg font-bold text-blue-600">{formatCurrency(displayData.fixed_deposit)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Loan Balance</p>
-                                    <p className="text-lg font-bold text-orange-600">{formatCurrency(client.loan_balance)}</p>
+                                    <p className="text-lg font-bold text-orange-600">{formatCurrency(displayData.loan_balance)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Arrears</p>
-                                    <p className="text-lg font-bold text-red-600">{formatCurrency(client.arrears)}</p>
+                                    <p className="text-lg font-bold text-red-600">{formatCurrency(displayData.arrears)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Fines</p>
-                                    <p className="font-semibold">{formatCurrency(client.fines)}</p>
+                                    <p className="font-semibold">{formatCurrency(displayData.fines)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/30 rounded-lg border border-border">
                                     <p className="text-xs text-muted-foreground">Mortuary</p>
-                                    <p className="font-semibold">{formatCurrency(client.mortuary)}</p>
+                                    <p className="font-semibold">{formatCurrency(displayData.mortuary)}</p>
                                 </div>
                             </div>
                         </div>

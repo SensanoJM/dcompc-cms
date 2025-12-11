@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Client;
+use App\Models\ClientFinancialRecord;
+use Illuminate\Support\Facades\DB;
 
 class ClientController extends Controller
 {
@@ -13,51 +15,85 @@ class ClientController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Client::query();
+        // 1. Get all available unique periods
+        $periods = ClientFinancialRecord::select('period')
+            ->distinct()
+            ->orderBy('period', 'desc')
+            ->pluck('period');
 
-        // Eager load sessions count if needed
-        if ($request->boolean('with_sessions', false)) {
-            $query->with('sessions');
+        // 2. Determine the period to show
+        $selectedPeriod = $request->input('period') ?? $periods->first();
+
+        // 3. Start building the query
+        $query = Client::query()->with('sessions');
+
+        // 4. Join with financial records for the selected period
+        // Inner join ensures we only get clients relevant to that period if a period exists.
+        if ($selectedPeriod) {
+            $query->join('client_financial_records', 'clients.client_id', '=', 'client_financial_records.client_id')
+                  ->where('client_financial_records.period', $selectedPeriod)
+                  ->select(
+                       'clients.*',
+                       DB::raw('COALESCE(client_financial_records.fixed_deposit, 0) as fixed_deposit'),
+                       DB::raw('COALESCE(client_financial_records.savings, 0) as savings'),
+                       DB::raw('COALESCE(client_financial_records.loan_balance, 0) as loan_balance'),
+                       DB::raw('COALESCE(client_financial_records.arrears, 0) as arrears'),
+                       DB::raw('COALESCE(client_financial_records.fines, 0) as fines'),
+                       DB::raw('COALESCE(client_financial_records.mortuary, 0) as mortuary'),
+                       'client_financial_records.period',
+                       'client_financial_records.assigned_mediator'
+                  );
+        } else {
+             $query->select('clients.*');
         }
 
-        // Search by name or id or period
+        // 5. Search
         if ($request->filled('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'LIKE', "%{$search}%")
-                  ->orWhere('client_id', $search)
-                  ->orWhere('period', 'LIKE', "%{$search}%");
-            });
+            $query->where('clients.name', 'LIKE', "%{$request->search}%");
         }
 
-        // Filters
-        if ($request->filled('period')) {
-            $query->where('period', $request->period);
+        // 6. Additional Filters (on financial record columns)
+        if ($selectedPeriod) {
+            if ($request->boolean('with_arrears')) {
+                $query->where('client_financial_records.arrears', '>', 0);
+            }
+            if ($request->boolean('with_loans')) {
+                $query->where('client_financial_records.loan_balance', '>', 0);
+            }
+             // Filter by date range (uploaded_date in financial record)
+            if ($request->filled('date_from') && $request->filled('date_to')) {
+                $query->whereBetween('client_financial_records.uploaded_date', [$request->date_from, $request->date_to]);
+            }
         }
 
-        if ($request->boolean('with_arrears')) {
-            $query->where('arrears', '>', 0);
-        }
-
-        if ($request->boolean('with_loans')) {
-            $query->where('loan_balance', '>', 0);
-        }
-
-        // Sorting: map friendly keys to columns
+        // 7. Sorting
         $sortBy = $request->get('sort_by', 'created_at');
-        $allowed = ['name', 'period', 'savings', 'loan_balance', 'arrears', 'created_at'];
-        if (!in_array($sortBy, $allowed)) {
-            $sortBy = 'created_at';
+        $sortOrder = $request->get('sort_order', 'desc');
+
+        if (in_array($sortBy, ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'])) {
+             $query->orderBy("client_financial_records.$sortBy", $sortOrder);
+        } elseif ($sortBy === 'name' || $sortBy === 'client_id') {
+             $query->orderBy("clients.$sortBy", $sortOrder);
+        } else {
+             $query->orderBy("clients.created_at", $sortOrder);
         }
 
-        $sortOrder = $request->get('sort_order', 'desc') === 'asc' ? 'asc' : 'desc';
-        $query->orderBy($sortBy, $sortOrder);
-
+        // 8. Pagination
         $perPage = (int) $request->get('per_page', 20);
-
         $clients = $query->paginate($perPage)->withQueryString();
 
-        // Return paginated response (Laravel paginator already structures keys)
-        return response()->json($clients);
+        // 9. Return structured response matching frontend expectation
+        // Frontend expects: { success: true, data: [...], total: ..., periods: [], selected_period: ... }
+        return response()->json([
+            'success' => true,
+            'data' => $clients->items(), // The actual array of client objects
+            'total' => $clients->total(),
+            'periods' => $periods,
+            'selected_period' => $selectedPeriod,
+            // Include pagination meta if needed by standard paginators, but our frontend consumes 'data' and 'total'
+            'current_page' => $clients->currentPage(),
+            'last_page' => $clients->lastPage(),
+            'per_page' => $clients->perPage(),
+        ]);
     }
 }

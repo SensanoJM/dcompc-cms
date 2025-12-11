@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id('session_id');
             $table->string('session_number')->unique();
             $table->date('session_date');
-            $table->integer('times_scheduled')->default(1);
+            $table->string('period'); // Which period this session belongs to
             $table->text('remarks')->nullable();
             $table->foreignId('created_by_user_id')
                   ->constrained('users', 'user_id')

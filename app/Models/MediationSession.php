@@ -15,6 +15,7 @@ class MediationSession extends Model
     protected $fillable = [
         'session_number',
         'session_date',
+        'period',
         'times_scheduled',
         'remarks',
         'created_by_user_id',

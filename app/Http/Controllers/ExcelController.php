@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Services\ExcelService;
+use Illuminate\Support\Facades\Log;
 
 class ExcelController extends Controller
 {
@@ -19,12 +20,28 @@ class ExcelController extends Controller
      */
     public function import(Request $request)
     {
+        Log::info('ExcelController: Import request received.');
+
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
         ]);
 
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            Log::info('File details:', [
+                'original_name' => $file->getClientOriginalName(),
+                'extension' => $file->getClientOriginalExtension(),
+                'mime_type' => $file->getMimeType(),
+                'size' => $file->getSize(),
+            ]);
+        } else {
+            Log::error('ExcelController: No file found in request.');
+        }
+
         try {
             $result = $this->excelService->importClients($request->file('file'));
+            
+            Log::info('ExcelController: Import successful.', $result);
 
             return response()->json([
                 'success' => true,
@@ -33,6 +50,8 @@ class ExcelController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            Log::error('ExcelController: Import exception.', ['message' => $e->getMessage()]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Import failed: ' . $e->getMessage()
