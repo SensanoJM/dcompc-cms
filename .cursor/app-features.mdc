@@ -34,7 +34,5 @@ FRONTEND COMPONENTS
 4. Admin Dashboard
 // Features:
 - Separate route (/admin)
-- Mediator CRUD table
 - Client manual entry form
 - System statistics cards
-- Access control (admin role only)

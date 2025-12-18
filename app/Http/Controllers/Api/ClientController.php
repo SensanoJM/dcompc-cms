@@ -96,4 +96,32 @@ class ClientController extends Controller
             'per_page' => $clients->perPage(),
         ]);
     }
+    public function show($id)
+    {
+        // Fetch client by external ID (or internal UUID if that's how frontend calls it, 
+        // but looking at sidebar logic "client.client_id", it seems to use the external ID).
+        // Let's support both or assume external ID based on context. 
+        // Given 'clients' table has 'client_id' as a unique bigInteger and 'client_uuid' as PK.
+        // If $id is the external ID:
+        
+        $client = Client::where('client_id', $id)
+            ->with(['financialRecords' => function($q) {
+                $q->orderBy('uploaded_date', 'desc'); // Latest first
+            }])
+            ->first();
+
+        // If not found by client_id, maybe try uuid? 
+        if (!$client) {
+             $client = Client::where('client_uuid', $id)
+                ->with(['financialRecords' => function($q) {
+                    $q->orderBy('uploaded_date', 'desc');
+                }])
+                ->firstOrFail();
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $client
+        ]);
+    }
 }

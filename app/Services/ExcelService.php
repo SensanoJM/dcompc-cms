@@ -86,10 +86,12 @@ class ExcelService
 
             try {
                 // 1. Create or Update Client
-                $client = Client::updateOrCreate(
-                    ['client_id' => $clientData['client_id']],
-                    ['name' => $clientData['name']]
-                );
+                // Ensure client_id is cast to the correct type for lookup
+                $clientId = (int) $clientData['client_id'];
+                
+                $client = Client::firstOrNew(['client_id' => $clientId]);
+                $client->name = $clientData['name'];
+                $client->save();
 
                 // 2. Create or Update Financial Record for this Period
                 // We use updateOrCreate to avoid duplicates for the same client+period

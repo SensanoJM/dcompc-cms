@@ -154,18 +154,9 @@ export default function ClientTable() {
         }
     };
 
-    const handleRowClick = async (c: Client) => {
-        setLoading(true);
-        try {
-            const res = await axios.get(`/api/clients/${c.client_id}`);
-            setSelectedClient(res.data.client || c);
-        } catch (err) {
-            console.error(err);
-            setSelectedClient(c);
-        } finally {
-            setLoading(false);
-            setIsSidebarOpen(true);
-        }
+    const handleRowClick = (c: Client) => {
+        setSelectedClient(c);
+        setIsSidebarOpen(true);
     };
 
     return (
@@ -263,7 +254,7 @@ export default function ClientTable() {
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.fines)}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex gap-2 justify-end">
-                                            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleRowClick(c); }}>View</Button>
+                                            <Button type="button" size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleRowClick(c); }}>View</Button>
                                         </div>
                                     </td>
                                 </tr>
@@ -281,9 +272,9 @@ export default function ClientTable() {
             <div className="flex items-center justify-between mt-4">
                 <div className="text-sm text-muted-foreground">Showing {totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} - {Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}</div>
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
                     <div className="text-sm">Page {page} / {totalPages}</div>
-                    <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
                 </div>
             </div>
 

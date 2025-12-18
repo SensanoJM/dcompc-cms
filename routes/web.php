@@ -31,7 +31,7 @@ Route::get('/', function () {
 
 // API endpoints for clients (used by SPA table)
 Route::get('/api/clients', [\App\Http\Controllers\Api\ClientController::class, 'index']);
-Route::get('/api/clients/{id}', [\App\Http\Controllers\ClientController::class, 'show']);
+Route::get('/api/clients/{id}', [\App\Http\Controllers\Api\ClientController::class, 'show']);
 // Excel import endpoint used by client table
 Route::post('/api/excel/import', [\App\Http\Controllers\ExcelController::class, 'import']);
 
