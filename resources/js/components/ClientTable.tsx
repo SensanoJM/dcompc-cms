@@ -49,7 +49,7 @@ export default function ClientTable() {
 
     // Period filtering
     const [periods, setPeriods] = useState<string[]>([]);
-    const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+    const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -117,8 +117,11 @@ export default function ClientTable() {
             // Update periods list if provided
             if (res.data.periods) {
                 setPeriods(res.data.periods);
-                // If no period selected and we have periods, maybe select the server's selected one?
+                // If the server returns a selected_period (defaults to first or all), sync it if we have nothing
+                // But if we specifically asked for 'all', keep it.
                 if (!selectedPeriod && res.data.selected_period) {
+                    // If the server forced a default (e.g. latest period), use it.
+                    // But if the server supported 'all' (which we just added), it might return 'all'
                     setSelectedPeriod(res.data.selected_period);
                 }
             }
@@ -187,6 +190,7 @@ export default function ClientTable() {
                             <SelectValue placeholder="Select Period" />
                         </SelectTrigger>
                         <SelectContent>
+                            <SelectItem value="all">All Clients (Total)</SelectItem>
                             {periods.map((period) => (
                                 <SelectItem key={period} value={period}>
                                     {period}
@@ -197,7 +201,7 @@ export default function ClientTable() {
                         </SelectContent>
                     </Select>
 
-                    <Button variant="ghost" onClick={() => { setQuery(''); setSelectedPeriod(periods[0] || ''); setPage(1); }}>Reset</Button>
+                    <Button variant="ghost" onClick={() => { setQuery(''); setSelectedPeriod('all'); setPage(1); }}>Reset</Button>
                 </div>
 
                 <div className="flex items-center gap-2">

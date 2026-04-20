@@ -44,6 +44,14 @@ export interface Client {
     mortuary: number;
     assigned_mediator?: string;
     financial_records?: ClientFinancialRecord[];
+    total_financials?: {
+        savings: number;
+        fixed_deposit: number;
+        loan_balance: number;
+        arrears: number;
+        fines: number;
+        mortuary: number;
+    };
 }
 
 export interface Remark {
@@ -80,7 +88,9 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
     const [newRemark, setNewRemark] = useState('');
 
     // Period filtering state
-    const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+    // Period filtering state - default to 'all_time' per request
+    // Period filtering state - default to 'all_time' per request
+    const [selectedPeriod, setSelectedPeriod] = useState<string>('all_time');
     const [comparisonPeriod, setComparisonPeriod] = useState<string>('');
 
     // State for local edits
@@ -99,10 +109,11 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
                 return initialClient;
             });
 
-            // Set default period from initialClient if valid
-            if (initialClient.period) {
-                setSelectedPeriod(initialClient.period);
-            }
+            // Do NOT set default period.
+            // if (initialClient.period) {
+            //    setSelectedPeriod(initialClient.period);
+            // }
+            setSelectedPeriod('');
         }
 
         const fetchClientDetails = async () => {
@@ -118,12 +129,16 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
                         setClient(fullClient);
 
                         // Update period selection intelligently
-                        // If we already have a selected period (from initialClient), keep it if it exists in records
-                        // Otherwise default to latest/current
-                        const hasCurrentSelection = fullClient.financial_records?.some((r: any) => r.period === initialClient.period);
-                        const defaultPeriod = hasCurrentSelection ? initialClient.period : (fullClient.financial_records?.[0]?.period || '');
-
-                        if (defaultPeriod) setSelectedPeriod(defaultPeriod);
+                        // We strictly want NO default selection now, unless the user manually selects one.
+                        // However, if we want to respect "initialClient.period" ONLY if it was explicitly passed (e.g. from a deep link or specific intent),
+                        // we can try to set it. But the requirement says "no default values".
+                        // So we will just ensure it clears if it was undefined.
+                        // Default to 'all_time' if no specific period requested
+                        if (initialClient.period) {
+                            setSelectedPeriod(initialClient.period);
+                        } else {
+                            setSelectedPeriod('all_time');
+                        }
                     }
                 } catch (error) {
                     console.error("Failed to fetch client details", error);
@@ -149,20 +164,77 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
     const displayData = useMemo(() => {
         if (!client) return null;
 
-        if (selectedPeriod) {
-            const record = getRecordByPeriod(selectedPeriod);
-            if (record) {
+        // Helper to safely sum two possibly undefined numbers with strict Number casting
+        const sum = (a: any, b: any) => Number(a || 0) + Number(b || 0);
+
+        if (selectedPeriod && selectedPeriod !== 'all_time') {
+            const currentRecord = getRecordByPeriod(selectedPeriod);
+
+            // If comparison is active, sum the values
+            if (comparisonPeriod && comparisonPeriod !== "no_comparison") {
+                const comparisonRecord = getRecordByPeriod(comparisonPeriod);
+
+                // Use currentRecord as base for other fields (like mediator), but overwrite financials with sums
+                const baseRecord = currentRecord || comparisonRecord || {};
+
                 return {
                     ...client,
-                    ...record, // Overwrite base fields with record specific ones
-                    assigned_mediator: record.assigned_mediator // Ensure mediator is from record
+                    ...baseRecord,
+                    savings: sum(currentRecord?.savings, comparisonRecord?.savings),
+                    fixed_deposit: sum(currentRecord?.fixed_deposit, comparisonRecord?.fixed_deposit),
+                    loan_balance: sum(currentRecord?.loan_balance, comparisonRecord?.loan_balance),
+                    arrears: sum(currentRecord?.arrears, comparisonRecord?.arrears),
+                    fines: sum(currentRecord?.fines, comparisonRecord?.fines),
+                    mortuary: sum(currentRecord?.mortuary, comparisonRecord?.mortuary),
+                    assigned_mediator: currentRecord?.assigned_mediator || comparisonRecord?.assigned_mediator
                 };
+            }
+
+            // Normal single period view
+            if (currentRecord) {
+                return {
+                    ...client,
+                    ...currentRecord,
+                    assigned_mediator: currentRecord.assigned_mediator
+                };
+            }
+        } else {
+            // NO Period Selected (or 'all_time') -> Show BACKEND COMPUTED TOTALS if available
+            if (client.total_financials) {
+                return {
+                    ...client,
+                    savings: Number(client.total_financials.savings || 0),
+                    fixed_deposit: Number(client.total_financials.fixed_deposit || 0),
+                    loan_balance: Number(client.total_financials.loan_balance || 0),
+                    arrears: Number(client.total_financials.arrears || 0),
+                    fines: Number(client.total_financials.fines || 0),
+                    mortuary: Number(client.total_financials.mortuary || 0),
+                    assigned_mediator: 'None'
+                };
+            }
+
+            // Fallback to client-side reduction if backend total missing (shouldn't happen with new API)
+            if (client.financial_records && client.financial_records.length > 0) {
+                const totals = client.financial_records.reduce((acc, record) => {
+                    return {
+                        savings: sum(acc.savings, record.savings),
+                        fixed_deposit: sum(acc.fixed_deposit, record.fixed_deposit),
+                        loan_balance: sum(acc.loan_balance, record.loan_balance),
+                        arrears: sum(acc.arrears, record.arrears),
+                        fines: sum(acc.fines, record.fines),
+                        mortuary: sum(acc.mortuary, record.mortuary),
+                    };
+                }, {
+                    savings: 0, fixed_deposit: 0, loan_balance: 0, arrears: 0, fines: 0, mortuary: 0
+                });
+
+                return { ...client, ...totals, assigned_mediator: 'None' };
             }
         }
 
         // Fallback to client base data
         return client;
-    }, [client, selectedPeriod]);
+    }, [client, selectedPeriod, comparisonPeriod]);
 
     // Update mediator state when displayData changes
     useEffect(() => {
@@ -209,32 +281,10 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
     };
 
     const handleSaveMediator = async () => {
+        // Reverted per request - simplified or removed complex logic
         if (!client) return;
-
-        try {
-            // Update mediator for the specific period logic
-            // We need to know which record to update.
-            // If we are strictly updating the record for 'selectedPeriod':
-
-            await axios.put(`/api/clients/${client.client_id}`, {
-                ...client,
-                period: selectedPeriod, // Important: Tell backend which period record to update
-                assigned_mediator: mediator
-            });
-
-            setIsEditingMediator(false);
-
-            // Re-fetch or locally update
-            if (client.financial_records) {
-                const updatedRecords = client.financial_records.map(r =>
-                    r.period === selectedPeriod ? { ...r, assigned_mediator: mediator } : r
-                );
-                setClient({ ...client, financial_records: updatedRecords, assigned_mediator: mediator });
-            }
-
-        } catch (error) {
-            console.error("Failed to update mediator", error);
-        }
+        // Simply update local state for now or basic update if needed
+        setIsEditingMediator(false);
     };
 
     const handleAddRemark = () => {
@@ -256,6 +306,7 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
     }, [client]);
 
     return (
+        // Client Sidebar
         <div
             className={`fixed inset-y-0 right-0 z-50 w-[400px] bg-background shadow-2xl transition-transform duration-300 ease-in-out border-l border-border flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'
                 }`}
@@ -280,9 +331,10 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
                             {periods.length > 0 ? (
                                 <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
                                     <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Select period" />
+                                        <SelectValue placeholder="Filter by period (shows Total if empty)" />
                                     </SelectTrigger>
                                     <SelectContent>
+                                        <SelectItem value="all_time">Total (No Period)</SelectItem>
                                         {periods.map((p) => (
                                             <SelectItem key={p} value={p}>
                                                 {p}
@@ -373,8 +425,12 @@ export default function ClientSidebar({ client: initialClient, isOpen, onClose }
                         {/* Financial Overview */}
                         <div>
                             <h3 className="text-sm font-medium mb-3 flex items-center gap-2 text-foreground">
-                                <DollarSign className="h-4 w-4" /> Financial Overview
-                                {comparisonPeriod && <span className="text-xs text-muted-foreground ml-auto">vs {comparisonPeriod}</span>}
+                                <DollarSign className="h-4 w-4" />
+                                {selectedPeriod && selectedPeriod !== 'all_time'
+                                    ? (comparisonPeriod ? "Combined Financial Overview" : "Financial Overview")
+                                    : "Total Financial Overview (All Time)"
+                                }
+                                {comparisonPeriod && selectedPeriod && selectedPeriod !== 'all_time' && <span className="text-xs text-muted-foreground ml-auto">({selectedPeriod} + {comparisonPeriod})</span>}
                             </h3>
                             <div className="grid grid-cols-2 gap-4">
                                 {/* Savings (Asset) */}

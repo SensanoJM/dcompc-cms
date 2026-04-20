@@ -1,0 +1,29 @@
+---
+alwaysApply: true
+description: "Local LAN deployment environment and XAMPP setup constraints"
+---
+
+# Deployment Context
+
+## Environment
+- **Runtime:** XAMPP (PHP 8.2) on a local Windows machine — not a cloud server.
+- **Database:** Local PostgreSQL instance managed via pgAdmin4.
+- **Network:** LAN-only. All users connect via the server machine's IP address (e.g., `http://192.168.x.x`). No internet access required or assumed.
+- **Distribution:** Accessed via standard browsers on LAN devices — no app installs needed.
+
+## Constraints
+- The app must work fully **offline**. Do not add dependencies on external APIs, CDNs, or cloud services.
+- Deployment is a single server machine that stays on; other LAN devices are clients only.
+- Use `get-absolute-url` (Boost MCP tool) whenever sharing a local project URL — never assume `localhost` for links shared with the user.
+
+## Running the App Locally
+```bash
+composer run dev   # starts Laravel + queue + Vite concurrently (recommended)
+php artisan serve  # Laravel only
+npm run dev        # Vite only
+```
+
+For production-style builds served via XAMPP Apache:
+```bash
+npm run build
+```

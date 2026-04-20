@@ -13,7 +13,7 @@ import {
 import { dashboard } from '@/routes';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
-import { ShieldIcon, LayoutGrid } from 'lucide-react';
+import { ShieldIcon, LayoutGrid, HandCoinsIcon } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -22,6 +22,11 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
+    // {
+    //     title: 'Collection',
+    //     href: collection(),
+    //     icon: HandCoinsIcon,
+    // },
 ];
 
 const footerNavItems: NavItem[] = [

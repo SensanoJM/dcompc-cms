@@ -1,0 +1,47 @@
+---
+alwaysApply: true
+description: "Database engine requirements, model conventions, and migration rules"
+---
+
+# Database Rules
+
+## Engine: PostgreSQL Only
+- Use `DB_CONNECTION=pgsql` — never SQLite or MySQL.
+- Managed locally via pgAdmin4.
+- Configure `.env` with correct local host IP and port.
+
+## Financial Column Types
+- Always use `decimal` or `numeric` (not `float`) for: `fixed_deposit`, `savings`, `loan_balance`, `arrears`, `fines`, `mortuary`.
+- Example migration: `$table->decimal('loan_balance', 15, 2)->default(0);`
+
+## Required Indexes
+Index the following on `client_financial_records` and `clients` — these drive search and filter on every page load:
+- `client_id` (external identifier)
+- `name`
+- `period`
+
+## Core Model Conventions
+
+### Client
+- Primary key: `client_uuid` (UUID)
+- External display key: `client_id` (string, from import)
+- Scopes: name search, period filter
+- Accessor: aggregated total financials (e.g. `total_assets`)
+- Mutable state: `remarks` (text), `times_scheduled` (int)
+
+### ClientFinancialRecord
+- Unique constraint: `(client_id, period)` — one record per client per period.
+- All financial columns are `decimal`.
+
+### MediationSession
+- Can auto-generate a session tracking number.
+- Associated with `Client` records via pivot (`session_clients`).
+- Mediator assignments tracked via `session_mediators` pivot.
+
+### User (Role-based)
+- Two roles: `Admin` and `Mediator` — use standard Laravel auth conventions.
+- Do not introduce a permissions framework unless explicitly requested.
+
+## Migration Rules
+- When modifying a column, re-declare all previously defined attributes to avoid dropping them (Laravel 12 requirement).
+- Use Postgres-native types where appropriate (e.g. `uuid`, `numeric`).

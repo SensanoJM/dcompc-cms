@@ -22,14 +22,46 @@ class ClientController extends Controller
             ->pluck('period');
 
         // 2. Determine the period to show
-        $selectedPeriod = $request->input('period') ?? $periods->first();
+        // Default to 'all' as requested
+        $requestPeriod = $request->input('period');
+        $selectedPeriod = $requestPeriod ?? 'all';
 
         // 3. Start building the query
         $query = Client::query()->with('sessions');
 
-        // 4. Join with financial records for the selected period
-        // Inner join ensures we only get clients relevant to that period if a period exists.
-        if ($selectedPeriod) {
+        // 4. Join with financial records
+        if ($selectedPeriod === 'all') {
+            // "All" view: Get the TOTAL (Sum) financial records for each client
+            $financialSums = DB::table('client_financial_records')
+                ->select(
+                    'client_id',
+                    DB::raw('SUM(fixed_deposit) as fixed_deposit'),
+                    DB::raw('SUM(savings) as savings'),
+                    DB::raw('SUM(loan_balance) as loan_balance'),
+                    DB::raw('SUM(arrears) as arrears'),
+                    DB::raw('SUM(fines) as fines'),
+                    DB::raw('SUM(mortuary) as mortuary')
+                )
+                ->groupBy('client_id');
+
+            // Join the main table to the subquery
+            $query->leftJoinSub($financialSums, 'financial_sums', function ($join) {
+                $join->on('clients.client_id', '=', 'financial_sums.client_id');
+            })
+            ->select(
+                'clients.*',
+                DB::raw('COALESCE(financial_sums.fixed_deposit, 0) as fixed_deposit'),
+                DB::raw('COALESCE(financial_sums.savings, 0) as savings'),
+                DB::raw('COALESCE(financial_sums.loan_balance, 0) as loan_balance'),
+                DB::raw('COALESCE(financial_sums.arrears, 0) as arrears'),
+                DB::raw('COALESCE(financial_sums.fines, 0) as fines'),
+                DB::raw('COALESCE(financial_sums.mortuary, 0) as mortuary'),
+                DB::raw("'All Time' as period"),
+                DB::raw("NULL as assigned_mediator")
+            );
+
+        } elseif ($selectedPeriod) {
+            // Specific Period view: Inner join ensuring we only get clients for that period
             $query->join('client_financial_records', 'clients.client_id', '=', 'client_financial_records.client_id')
                   ->where('client_financial_records.period', $selectedPeriod)
                   ->select(
@@ -52,16 +84,20 @@ class ClientController extends Controller
             $query->where('clients.name', 'LIKE', "%{$request->search}%");
         }
 
-        // 6. Additional Filters (on financial record columns)
+        // 6. Additional Filters
+        $tableAlias = ($selectedPeriod === 'all') ? 'financial_sums' : 'client_financial_records';
+
+        // Only apply if we have financial records joined (which is true for 'all' and specific period)
         if ($selectedPeriod) {
             if ($request->boolean('with_arrears')) {
-                $query->where('client_financial_records.arrears', '>', 0);
+                $query->where("$tableAlias.arrears", '>', 0);
             }
             if ($request->boolean('with_loans')) {
-                $query->where('client_financial_records.loan_balance', '>', 0);
+                $query->where("$tableAlias.loan_balance", '>', 0);
             }
-             // Filter by date range (uploaded_date in financial record)
-            if ($request->filled('date_from') && $request->filled('date_to')) {
+             // Filter by date range (uploaded_date). Note: 'all' view sums data, so uploaded_date isn't really applicable or is ambiguous.
+             // We can disable date filter for 'all' or default to not filtering.
+            if ($selectedPeriod !== 'all' && $request->filled('date_from') && $request->filled('date_to')) {
                 $query->whereBetween('client_financial_records.uploaded_date', [$request->date_from, $request->date_to]);
             }
         }
@@ -71,7 +107,7 @@ class ClientController extends Controller
         $sortOrder = $request->get('sort_order', 'desc');
 
         if (in_array($sortBy, ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'])) {
-             $query->orderBy("client_financial_records.$sortBy", $sortOrder);
+             $query->orderBy("$tableAlias.$sortBy", $sortOrder);
         } elseif ($sortBy === 'name' || $sortBy === 'client_id') {
              $query->orderBy("clients.$sortBy", $sortOrder);
         } else {
@@ -83,14 +119,12 @@ class ClientController extends Controller
         $clients = $query->paginate($perPage)->withQueryString();
 
         // 9. Return structured response matching frontend expectation
-        // Frontend expects: { success: true, data: [...], total: ..., periods: [], selected_period: ... }
         return response()->json([
             'success' => true,
-            'data' => $clients->items(), // The actual array of client objects
+            'data' => $clients->items(),
             'total' => $clients->total(),
             'periods' => $periods,
             'selected_period' => $selectedPeriod,
-            // Include pagination meta if needed by standard paginators, but our frontend consumes 'data' and 'total'
             'current_page' => $clients->currentPage(),
             'last_page' => $clients->lastPage(),
             'per_page' => $clients->perPage(),
@@ -118,6 +152,23 @@ class ClientController extends Controller
                 }])
                 ->firstOrFail();
         }
+
+        // Calculate totals dynamically using the database for accuracy
+        // We use the same client identifier found above
+        $totals = DB::table('client_financial_records')
+            ->where('client_id', $client->client_id)
+            ->select(
+                DB::raw('SUM(savings) as savings'),
+                DB::raw('SUM(fixed_deposit) as fixed_deposit'),
+                DB::raw('SUM(loan_balance) as loan_balance'),
+                DB::raw('SUM(arrears) as arrears'),
+                DB::raw('SUM(fines) as fines'),
+                DB::raw('SUM(mortuary) as mortuary')
+            )
+            ->first();
+
+        // Attach totals to the response
+        $client->total_financials = $totals;
 
         return response()->json([
             'success' => true,
