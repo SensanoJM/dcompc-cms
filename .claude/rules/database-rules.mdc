@@ -7,8 +7,8 @@ description: "Database engine requirements, model conventions, and migration rul
 
 ## Engine: PostgreSQL Only
 - Use `DB_CONNECTION=pgsql` — never SQLite or MySQL.
-- Managed locally via pgAdmin4.
-- Configure `.env` with correct local host IP and port.
+- Runs as a Docker service (`pgsql` container). Managed via pgAdmin4 on the host (connects to `localhost:5432`) or via `sail artisan tinker` / `./vendor/bin/sail psql`.
+- `DB_HOST=pgsql` uses Docker's internal DNS — do not change to `127.0.0.1`.
 
 ## Financial Column Types
 - Always use `decimal` or `numeric` (not `float`) for: `fixed_deposit`, `savings`, `loan_balance`, `arrears`, `fines`, `mortuary`.

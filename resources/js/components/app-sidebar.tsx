@@ -10,10 +10,10 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, clients, mediation } from '@/routes';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
-import { ShieldIcon, LayoutGrid, HandCoinsIcon } from 'lucide-react';
+import { ShieldIcon, LayoutGrid, Users, CalendarClock } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -22,11 +22,16 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
-    // {
-    //     title: 'Collection',
-    //     href: collection(),
-    //     icon: HandCoinsIcon,
-    // },
+    {
+        title: 'Clients',
+        href: clients(),
+        icon: Users,
+    },
+    {
+        title: 'Mediation',
+        href: mediation(),
+        icon: CalendarClock,
+    },
 ];
 
 const footerNavItems: NavItem[] = [

@@ -1,29 +1,49 @@
 ---
 alwaysApply: true
-description: "Local LAN deployment environment and XAMPP setup constraints"
+description: "Local LAN deployment environment using Docker (Laravel Sail)"
 ---
 
 # Deployment Context
 
 ## Environment
-- **Runtime:** XAMPP (PHP 8.2) on a local Windows machine — not a cloud server.
-- **Database:** Local PostgreSQL instance managed via pgAdmin4.
+- **Runtime:** Docker via Laravel Sail — PHP 8.4, Node 22, PostgreSQL 18 in containers.
+- **Database:** PostgreSQL running as a Docker service (`pgsql`). Accessible from the host via pgAdmin4 at `localhost:5432` (credentials: user `sail`, password `password`, database `dcompc_cms`).
 - **Network:** LAN-only. All users connect via the server machine's IP address (e.g., `http://192.168.x.x`). No internet access required or assumed.
 - **Distribution:** Accessed via standard browsers on LAN devices — no app installs needed.
 
 ## Constraints
 - The app must work fully **offline**. Do not add dependencies on external APIs, CDNs, or cloud services.
-- Deployment is a single server machine that stays on; other LAN devices are clients only.
+- Deployment is a single server machine running Docker; other LAN devices are clients only.
 - Use `get-absolute-url` (Boost MCP tool) whenever sharing a local project URL — never assume `localhost` for links shared with the user.
 
-## Running the App Locally
+## Running the App
+
 ```bash
-composer run dev   # starts Laravel + queue + Vite concurrently (recommended)
-php artisan serve  # Laravel only
-npm run dev        # Vite only
+# Start all containers (detached)
+./vendor/bin/sail up -d
+
+# Stop all containers
+./vendor/bin/sail down
+
+# Full-stack dev (Laravel + queue + Vite concurrently)
+./vendor/bin/sail composer run dev
+
+# Run migrations
+./vendor/bin/sail artisan migrate
+
+# Open a shell inside the app container
+./vendor/bin/sail shell
+
+# REPL
+./vendor/bin/sail artisan tinker
 ```
 
-For production-style builds served via XAMPP Apache:
+## Recommended alias (add to ~/.bashrc or ~/.zshrc)
 ```bash
-npm run build
+alias sail='./vendor/bin/sail'
+```
+
+## Production builds
+```bash
+./vendor/bin/sail npm run build
 ```

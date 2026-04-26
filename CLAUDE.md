@@ -5,28 +5,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+# Start Docker containers (run this first)
+./vendor/bin/sail up -d
+
 # Full-stack development (Laravel + queue + Vite via concurrently)
-composer run dev
+./vendor/bin/sail composer run dev
 
 # Individual services
-php artisan serve
-npm run dev
+./vendor/bin/sail artisan serve
+./vendor/bin/sail npm run dev
 
 # Production build
-npm run build
-npm run build:ssr    # with SSR
+./vendor/bin/sail npm run build
+./vendor/bin/sail npm run build:ssr    # with SSR
 
 # One-time setup
-composer run setup   # install deps, migrate, build
+./vendor/bin/sail composer run setup   # install deps, migrate, build
 
 # Tests
-composer run test    # Pest test suite
+./vendor/bin/sail composer run test    # Pest test suite
 
 # Frontend checks
-npm run types        # TypeScript type check
-npm run lint         # ESLint with auto-fix
-npm run format       # Prettier format
-npm run format:check # Prettier validation
+./vendor/bin/sail npm run types        # TypeScript type check
+./vendor/bin/sail npm run lint         # ESLint with auto-fix
+./vendor/bin/sail npm run format       # Prettier format
+./vendor/bin/sail npm run format:check # Prettier validation
+
+# Stop containers
+./vendor/bin/sail down
 ```
 
 ## Architecture
@@ -37,7 +43,7 @@ This is a **Client & Mediation Session Management System** — it tracks client 
 
 ### Request Flow
 
-Browser → Inertia.js → Laravel Router → Controller → Eloquent → **PostgreSQL**  
+Browser → Inertia.js → Laravel Router (Sail container) → Controller → Eloquent → **PostgreSQL** (Docker service)  
 Controllers return `Inertia::render()` for page loads or JSON for API endpoints under `/api/*`.
 
 ### Backend Structure
@@ -60,4 +66,4 @@ Controllers return `Inertia::render()` for page loads or JSON for API endpoints 
 - **UUID primary keys** on `clients` (`client_uuid`) — don't confuse with the external `client_id` string used for display/import matching.
 - **Inertia shared data** (user, flash messages) is passed via `HandleInertiaRequests` middleware.
 - **Authentication** uses Laravel Fortify with optional 2FA; settings pages are in `pages/settings/`.
-- **Database** is PostgreSQL (`DB_CONNECTION=pgsql`) — never SQLite or MySQL. Managed via pgAdmin4. See `.claude/rules/database-rules.mdc` for model conventions and migration rules.
+- **Database** is PostgreSQL (`DB_CONNECTION=pgsql`) — never SQLite or MySQL. Runs as Docker service `pgsql`; connect via pgAdmin4 at `localhost:5432`. See `.claude/rules/database-rules.mdc` for model conventions and migration rules.

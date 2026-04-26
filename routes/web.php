@@ -28,6 +28,14 @@ Route::get('/', function () {
     return Inertia::render('dashboard');
 })->name('dashboard');
 
+Route::get('/clients', function () {
+    return Inertia::render('clients');
+})->name('clients');
+
+Route::get('/mediation', function () {
+    return Inertia::render('mediation');
+})->name('mediation');
+
 
 // API endpoints for clients (used by SPA table)
 Route::get('/api/clients', [\App\Http\Controllers\Api\ClientController::class, 'index']);
