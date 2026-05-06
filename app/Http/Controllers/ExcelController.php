@@ -40,7 +40,7 @@ class ExcelController extends Controller
 
         try {
             $result = $this->excelService->importClients($request->file('file'));
-            
+
             Log::info('ExcelController: Import successful.', $result);
 
             return response()->json([
@@ -51,11 +51,30 @@ class ExcelController extends Controller
 
         } catch (\Exception $e) {
             Log::error('ExcelController: Import exception.', ['message' => $e->getMessage()]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Import failed: ' . $e->getMessage()
             ], 422);
+        }
+    }
+
+    /**
+     * Import from a web form — redirects back with flash for Inertia pages.
+     */
+    public function importWeb(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        try {
+            $result = $this->excelService->importClients($request->file('file'));
+            Log::info('ExcelController: Web import successful.', $result);
+            return redirect()->back()->with('flash', ['import' => $result]);
+        } catch (\Exception $e) {
+            Log::error('ExcelController: Web import exception.', ['message' => $e->getMessage()]);
+            return redirect()->back()->with('flash', ['import_error' => $e->getMessage()]);
         }
     }
 

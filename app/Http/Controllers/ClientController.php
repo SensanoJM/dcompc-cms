@@ -2,133 +2,202 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Client;
 use App\Models\ClientFinancialRecord;
-use Inertia\Inertia;
+use App\Models\MediationSession;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 
 class ClientController extends Controller
 {
-    /**
-     * Display dashboard with clients table
-     */
     public function index(Request $request)
     {
-        // Get all available unique periods
         $periods = ClientFinancialRecord::select('period')
             ->distinct()
+            ->whereNotNull('period')
+            ->where('period', '!=', '')
             ->orderBy('period', 'desc')
             ->pluck('period');
 
-        // Determine the period to show:
-        // 1. Request period
-        // 2. Latest period available
-        // 3. Or empty string if no data
-        // 3. Or empty string if no data
-        $selectedPeriod = $request->input('period') ?? $periods->first();
+        $mediators = ClientFinancialRecord::select('assigned_mediator')
+            ->distinct()
+            ->whereNotNull('assigned_mediator')
+            ->where('assigned_mediator', '!=', '')
+            ->orderBy('assigned_mediator')
+            ->pluck('assigned_mediator');
 
-        $query = Client::query()->with('sessions');
+        $selectedPeriod = $request->input('period', 'all');
 
-        // Join with financial records to get the financial data for the selected period
-        // We use leftJoin so clients without records in this specific period might still show up (with nulls), 
-        // OR innerJoin if we only want clients valid for that period.
-        // Given the requirement "filter... per period", Inner Join is probably safer to show only relevant clients.
-        if ($selectedPeriod) {
-            $query->join('client_financial_records', 'clients.client_id', '=', 'client_financial_records.client_id')
-                  ->where('client_financial_records.period', $selectedPeriod)
-                  ->select('clients.*', 
-                           DB::raw('COALESCE(client_financial_records.fixed_deposit, 0) as fixed_deposit'),
-                           DB::raw('COALESCE(client_financial_records.savings, 0) as savings'), 
-                           DB::raw('COALESCE(client_financial_records.loan_balance, 0) as loan_balance'),
-                           DB::raw('COALESCE(client_financial_records.arrears, 0) as arrears'),
-                           DB::raw('COALESCE(client_financial_records.fines, 0) as fines'),
-                           DB::raw('COALESCE(client_financial_records.mortuary, 0) as mortuary'),
-                           'client_financial_records.period',
-                           'client_financial_records.assigned_mediator'
-                  );
+        $query = Client::query();
+
+        $financialFields = ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'];
+
+        if ($selectedPeriod === 'all') {
+            $sums = DB::table('client_financial_records')
+                ->select(
+                    'client_id',
+                    DB::raw('SUM(fixed_deposit) as fixed_deposit'),
+                    DB::raw('SUM(savings) as savings'),
+                    DB::raw('SUM(loan_balance) as loan_balance'),
+                    DB::raw('SUM(arrears) as arrears'),
+                    DB::raw('SUM(fines) as fines'),
+                    DB::raw('SUM(mortuary) as mortuary')
+                )
+                ->groupBy('client_id');
+
+            $query->leftJoinSub($sums, 'fs', fn($j) => $j->on('clients.client_id', '=', 'fs.client_id'))
+                ->select(
+                    'clients.*',
+                    DB::raw('COALESCE(fs.fixed_deposit, 0) as fixed_deposit'),
+                    DB::raw('COALESCE(fs.savings, 0) as savings'),
+                    DB::raw('COALESCE(fs.loan_balance, 0) as loan_balance'),
+                    DB::raw('COALESCE(fs.arrears, 0) as arrears'),
+                    DB::raw('COALESCE(fs.fines, 0) as fines'),
+                    DB::raw('COALESCE(fs.mortuary, 0) as mortuary'),
+                    DB::raw("'All Time' as period"),
+                    DB::raw('NULL as assigned_mediator')
+                );
+            $alias = 'fs';
         } else {
-            // No periods exist at all? Just select clients
-            $query->select('clients.*');
+            $query->join('client_financial_records as cfr', 'clients.client_id', '=', 'cfr.client_id')
+                ->where('cfr.period', $selectedPeriod)
+                ->select(
+                    'clients.*',
+                    DB::raw('COALESCE(cfr.fixed_deposit, 0) as fixed_deposit'),
+                    DB::raw('COALESCE(cfr.savings, 0) as savings'),
+                    DB::raw('COALESCE(cfr.loan_balance, 0) as loan_balance'),
+                    DB::raw('COALESCE(cfr.arrears, 0) as arrears'),
+                    DB::raw('COALESCE(cfr.fines, 0) as fines'),
+                    DB::raw('COALESCE(cfr.mortuary, 0) as mortuary'),
+                    'cfr.period',
+                    'cfr.assigned_mediator'
+                );
+            $alias = 'cfr';
         }
 
-        // Search by name
         if ($request->filled('search')) {
-            $query->where('clients.name', 'LIKE', "%{$request->search}%");
+            $query->where('clients.name', 'LIKE', '%' . $request->input('search') . '%');
         }
 
-        // Filter by date range (uploaded_date in financial record)
-        if ($request->filled('date_from') && $request->filled('date_to') && $selectedPeriod) {
-            $query->whereBetween('client_financial_records.uploaded_date', [$request->date_from, $request->date_to]);
+        if ($request->boolean('with_arrears')) {
+            $query->where("{$alias}.arrears", '>', 0);
         }
 
-        // Filter clients with arrears
-        if ($request->boolean('with_arrears') && $selectedPeriod) {
-            $query->where('client_financial_records.arrears', '>', 0);
+        if ($selectedPeriod !== 'all' && $request->filled('mediator')) {
+            $query->where('cfr.assigned_mediator', $request->input('mediator'));
         }
 
-        // Filter clients with loans
-        if ($request->boolean('with_loans') && $selectedPeriod) {
-            $query->where('client_financial_records.loan_balance', '>', 0);
-        }
+        $sortBy = $request->input('sort_by', 'name');
+        $sortOrder = in_array($request->input('sort_order'), ['asc', 'desc'])
+            ? $request->input('sort_order')
+            : 'desc';
 
-        // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        
-        // Handle sorting by fields that might be ambiguous or mapped
-        if (in_array($sortBy, ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'])) {
-             // These are now on the joined table
-             $query->orderBy("client_financial_records.$sortBy", $sortOrder);
-        } elseif ($sortBy === 'name' || $sortBy === 'client_id') {
-             $query->orderBy("clients.$sortBy", $sortOrder);
+        if (in_array($sortBy, $financialFields)) {
+            $query->orderBy("{$alias}.{$sortBy}", $sortOrder);
+        } elseif (in_array($sortBy, ['name', 'client_id'])) {
+            $query->orderBy("clients.{$sortBy}", $sortOrder);
         } else {
-             $query->orderBy("clients.created_at", $sortOrder);
+            $query->orderBy('clients.name', 'asc');
         }
 
-        // Paginate
-        $clients = $query->paginate(20)->withQueryString();
+        $perPage = in_array((int) $request->input('per_page', 20), [20, 50, 100])
+            ? (int) $request->input('per_page', 20)
+            : 20;
 
-        if ($request->wantsJson() && !$request->header('X-Inertia')) {
-            return response()->json([
-                'success' => true,
-                'data' => $clients->items(),
-                'total' => $clients->total(),
-                'periods' => $periods,
-                'selected_period' => $selectedPeriod
+        $clients = $query->paginate($perPage)->withQueryString();
+
+        return Inertia::render('clients/index', [
+            'clients'   => $clients,
+            'periods'   => $periods,
+            'mediators' => $mediators,
+            'filters'   => [
+                'search'       => $request->input('search', ''),
+                'period'       => $selectedPeriod,
+                'with_arrears' => $request->boolean('with_arrears'),
+                'mediator'     => $request->input('mediator', ''),
+                'sort_by'      => $sortBy,
+                'sort_order'   => $sortOrder,
+                'per_page'     => $perPage,
+            ],
+        ]);
+    }
+
+    public function batchSchedule(Request $request)
+    {
+        $validated = $request->validate([
+            'client_ids'     => 'required|array|min:1',
+            'client_ids.*'   => 'integer|exists:clients,client_id',
+            'session_date'   => 'required|date',
+            'session_number' => 'nullable|string|max:100|unique:mediation_sessions,session_number',
+            'period'         => 'required|string|max:100',
+        ]);
+
+        $scheduled = [];
+        $alreadyScheduled = [];
+
+        DB::transaction(function () use ($validated, $request, &$scheduled, &$alreadyScheduled) {
+            $session = MediationSession::create([
+                'session_number'     => $validated['session_number'] ?: null,
+                'session_date'       => $validated['session_date'],
+                'period'             => $validated['period'],
+                'created_by_user_id' => $request->user()?->user_id,
             ]);
-        }
 
-        return Inertia::render('Dashboard', [
-            'clients' => $clients,
-            'periods' => $periods,
-            'filters' => array_merge(
-                $request->only(['search', 'date_from', 'date_to', 'with_arrears', 'with_loans']),
-                ['period' => $selectedPeriod] // Return the effective period
-            ),
+            foreach ($validated['client_ids'] as $clientId) {
+                $inserted = DB::table('session_clients')->insertOrIgnore([
+                    'session_id'  => $session->session_id,
+                    'client_id'   => $clientId,
+                    'assigned_at' => now(),
+                ]);
+
+                if ($inserted) {
+                    $scheduled[] = $clientId;
+                } else {
+                    $alreadyScheduled[] = $clientId;
+                }
+            }
+        });
+
+        return redirect()->back()->with('flash', [
+            'batch_schedule' => [
+                'scheduled'         => $scheduled,
+                'already_scheduled' => $alreadyScheduled,
+            ],
         ]);
     }
 
     /**
-     * Display single client details with sessions
+     * Display the client detail page via Inertia.
      */
     public function show($id)
     {
-        $client = Client::with(['sessions.mediators', 'financialRecords', 'sessions' => function ($query) {
-            $query->orderBy('session_date', 'desc');
-        }])->where('client_id', $id)->firstOrFail();
+        $client = Client::where('client_id', $id)
+            ->with(['financialRecords' => function ($query) {
+                $query->orderBy('uploaded_date', 'desc');
+            }])
+            ->firstOrFail();
 
-        return response()->json([
-            'success' => true,
+        $totals = DB::table('client_financial_records')
+            ->where('client_id', $client->client_id)
+            ->select(
+                DB::raw('SUM(savings) as savings'),
+                DB::raw('SUM(fixed_deposit) as fixed_deposit'),
+                DB::raw('SUM(loan_balance) as loan_balance'),
+                DB::raw('SUM(arrears) as arrears'),
+                DB::raw('SUM(fines) as fines'),
+                DB::raw('SUM(mortuary) as mortuary')
+            )
+            ->first();
+
+        return Inertia::render('clients/show', [
             'client' => [
-                'client_id' => $client->client_id,
-                'name' => $client->name,
-                // Latest financial snapshot (optional, can be derived by frontend)
-                'financial_records' => $client->financialRecords, 
-                'sessions' => $client->sessions,
-                'created_at' => $client->created_at->format('Y-m-d H:i:s'),
-                'period' => $client->latestFinancial()?->period, // Add current period for context
-            ]
+                'client_id'        => $client->client_id,
+                'name'             => $client->name,
+                'period'           => $client->financialRecords->first()?->period,
+                'financial_records' => $client->financialRecords,
+                'total_financials' => $totals,
+            ],
         ]);
     }
 

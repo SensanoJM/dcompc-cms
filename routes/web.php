@@ -28,9 +28,11 @@ Route::get('/', function () {
     return Inertia::render('dashboard');
 })->name('dashboard');
 
-Route::get('/clients', function () {
-    return Inertia::render('clients');
-})->name('clients');
+Route::get('/clients', [\App\Http\Controllers\ClientController::class, 'index'])->name('clients');
+Route::post('/clients/import', [\App\Http\Controllers\ExcelController::class, 'importWeb'])->name('clients.import');
+Route::post('/clients/batch-schedule', [\App\Http\Controllers\ClientController::class, 'batchSchedule'])->name('clients.batch-schedule');
+
+Route::get('/clients/{id}', [\App\Http\Controllers\ClientController::class, 'show'])->name('clients.show');
 
 Route::get('/mediation', function () {
     return Inertia::render('mediation');
@@ -43,4 +45,4 @@ Route::get('/api/clients/{id}', [\App\Http\Controllers\Api\ClientController::cla
 // Excel import endpoint used by client table
 Route::post('/api/excel/import', [\App\Http\Controllers\ExcelController::class, 'import']);
 
-require __DIR__.'/settings.php';
+require __DIR__ . '/settings.php';

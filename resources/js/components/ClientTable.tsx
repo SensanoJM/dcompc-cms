@@ -1,170 +1,153 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, ChevronDown, ChevronUp } from 'lucide-react';
-import ClientSidebar from './ClientSidebar';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import axios from 'axios';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Filters } from '@/pages/clients/index';
+import { Link, router } from '@inertiajs/react';
+import { Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 type Client = {
     client_id: number;
     name: string;
     period: string;
     savings: number;
-    fixed_deposit: number;
     loan_balance: number;
     arrears: number;
     fines: number;
-    mortuary: number;
-    assigned_mediator?: string;
-    // financial_records will be present when fetching single client details
-    financial_records?: any[];
+    assigned_mediator: string | null;
 };
 
-type SortKey = 'name' | 'period' | 'savings' | 'loan_balance' | 'arrears';
-
-const PAGE_SIZE = 20;
-
-const formatCurrency = (value: number) => {
-    const num = Number(value);
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PHP' }).format(isNaN(num) ? 0 : num);
+type Pagination = {
+    total: number;
+    currentPage: number;
+    lastPage: number;
+    perPage: number;
 };
 
-export default function ClientTable() {
-    const [clients, setClients] = useState<Client[]>([]); // page items
-    const [loading, setLoading] = useState(true);
-    const [query, setQuery] = useState('');
-    const [page, setPage] = useState(1);
-    const [sortKey, setSortKey] = useState<SortKey>('name');
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [totalCount, setTotalCount] = useState(0);
+type ClientTableProps = {
+    clients: Client[];
+    pagination: Pagination;
+    periods: string[];
+    mediators: string[];
+    filters: Filters;
+    currentUserName: string;
+    onBatchSchedule: (ids: number[]) => void;
+};
 
-    // Period filtering
-    const [periods, setPeriods] = useState<string[]>([]);
-    const [selectedPeriod, setSelectedPeriod] = useState<string>('all');
+const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PHP' }).format(
+        isNaN(Number(value)) ? 0 : Number(value),
+    );
 
+const buildParams = (filters: Filters, overrides: Partial<Filters & { page: number }> = {}) => {
+    const merged = { ...filters, page: 1, ...overrides };
+    const p: Record<string, string> = {};
+    if (merged.search) p.search = merged.search;
+    if (merged.period && merged.period !== 'all') p.period = merged.period;
+    if (merged.with_arrears) p.with_arrears = '1';
+    if (merged.mediator) p.mediator = merged.mediator;
+    if (merged.sort_by && merged.sort_by !== 'name') p.sort_by = merged.sort_by;
+    if (merged.sort_order && merged.sort_order !== 'desc') p.sort_order = merged.sort_order;
+    if (merged.per_page && merged.per_page !== 20) p.per_page = String(merged.per_page);
+    const page = (merged as Record<string, unknown>).page as number | undefined;
+    if (page && page > 1) p.page = String(page);
+    return p;
+};
+
+export default function ClientTable({
+    clients,
+    pagination,
+    periods,
+    mediators,
+    filters,
+    currentUserName,
+    onBatchSchedule,
+}: ClientTableProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const openFilePicker = () => fileInputRef.current?.click();
+    const [searchValue, setSearchValue] = useState(filters.search);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    useEffect(() => {
+        setSearchValue(filters.search);
+    }, [filters.search]);
+
+    // Clear selection on every page data change (page turn or live reload)
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [clients]);
+
+    const applyFilter = (overrides: Partial<Filters>) => {
+        router.get('/clients', buildParams(filters, overrides), { preserveState: true });
+    };
+
+    const handleSearch = (value: string) => {
+        setSearchValue(value);
+        if (searchDebounce.current) clearTimeout(searchDebounce.current);
+        searchDebounce.current = setTimeout(() => {
+            router.get('/clients', buildParams(filters, { search: value }), { preserveState: true });
+        }, 350);
+    };
+
+    const goToPage = (page: number) => {
+        router.get('/clients', buildParams(filters, { page } as Partial<Filters & { page: number }>), {
+            preserveState: false,
+        });
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
         if (!f) return;
-        setLoading(true);
-        try {
-            const fd = new FormData();
-            fd.append('file', f);
-
-            const res = await axios.post('/api/excel/import', fd, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            });
-
-            if (res.data.success) {
-                window.alert(`Import finished. Imported: ${res.data.data.imported || 0}, Failed: ${res.data.data.failed || 0}`);
-                setPage(1);
-                fetchClients(); // Refresh list
-            } else {
-                console.error('Import failed', res.data);
-                window.alert(res.data.message || 'Import failed');
-            }
-        } catch (err: any) {
-            console.error(err);
-            window.alert(err.response?.data?.message || 'Import error');
-        } finally {
-            setLoading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        }
+        const fd = new FormData();
+        fd.append('file', f);
+        router.post('/clients/import', fd, {
+            forceFormData: true,
+            onFinish: () => {
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            },
+        });
     };
 
-    const fetchClients = async () => {
-        setLoading(true);
-        try {
-            // map frontend sort keys to server columns
-            const sortMap: Record<string, string> = {
-                client_id: 'client_id',
-                name: 'name',
-                period: 'period',
-                savings: 'savings',
-                loan_balance: 'loan_balance',
-                arrears: 'arrears',
-            };
+    const allPageIds = clients.map((c) => c.client_id);
+    const allSelected = allPageIds.length > 0 && allPageIds.every((id) => selectedIds.has(id));
 
-            const params = new URLSearchParams();
-            if (query.trim()) params.append('search', query.trim());
-            if (selectedPeriod) params.append('period', selectedPeriod);
+    const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(allPageIds));
 
-            params.append('page', String(page));
-            params.append('per_page', String(PAGE_SIZE));
-            params.append('sort_by', sortMap[sortKey] || 'created_at');
-            params.append('sort_order', sortDir);
-
-            const res = await axios.get(`/api/clients?${params.toString()}`);
-            console.log("ClientTable API Response:", res.data); // Debug log
-
-            setClients(res.data.data || []);
-            setTotalCount(res.data.total || 0);
-
-            // Update periods list if provided
-            if (res.data.periods) {
-                setPeriods(res.data.periods);
-                // If the server returns a selected_period (defaults to first or all), sync it if we have nothing
-                // But if we specifically asked for 'all', keep it.
-                if (!selectedPeriod && res.data.selected_period) {
-                    // If the server forced a default (e.g. latest period), use it.
-                    // But if the server supported 'all' (which we just added), it might return 'all'
-                    setSelectedPeriod(res.data.selected_period);
-                }
-            }
-        } catch (err) {
-            console.error(err);
-            setClients([]);
-            setTotalCount(0);
-        } finally {
-            setLoading(false);
-        }
+    const toggleRow = (id: number) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
     };
 
-    useEffect(() => {
-        fetchClients();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [page, sortKey, sortDir, selectedPeriod]);
-
-    // debounce search
-    useEffect(() => {
-        const t = setTimeout(() => { setPage(1); fetchClients(); }, 350);
-        return () => clearTimeout(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [query]);
-
-    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-    const toggleSort = (key: SortKey) => {
-        if (sortKey === key) {
-            setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    const toggleSort = (key: 'name' | 'savings' | 'loan_balance' | 'arrears') => {
+        if (filters.sort_by === key) {
+            applyFilter({ sort_order: filters.sort_order === 'asc' ? 'desc' : 'asc' });
         } else {
-            setSortKey(key);
-            setSortDir('asc');
+            applyFilter({ sort_by: key, sort_order: 'asc' });
         }
     };
 
-    const handleRowClick = (c: Client) => {
-        setSelectedClient(c);
-        setIsSidebarOpen(true);
+    const SortIcon = ({ col }: { col: string }) => {
+        if (filters.sort_by !== col) return null;
+        return filters.sort_order === 'asc' ? (
+            <ChevronUp className="ml-1 inline-block h-4 w-4" />
+        ) : (
+            <ChevronDown className="ml-1 inline-block h-4 w-4" />
+        );
     };
+
+    const { total, currentPage, lastPage, perPage } = pagination;
+    const showingFrom = total === 0 ? 0 : (currentPage - 1) * perPage + 1;
+    const showingTo = Math.min(currentPage * perPage, total);
+    const isMediatorDisabled = !filters.period || filters.period === 'all';
 
     return (
-        <div className="w-full">
-            {/* hidden file input for import */}
+        <div className="w-full space-y-4">
             <input
                 ref={fileInputRef}
                 type="file"
@@ -174,116 +157,240 @@ export default function ClientTable() {
                 aria-label="Import Excel file"
                 title="Import Excel file"
             />
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
-                <div className="flex items-center gap-2 w-full max-w-2xl bg-muted/10 p-2 rounded-lg">
+
+            {/* Toolbar */}
+            <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/10 p-2">
                     <Input
                         placeholder="Search clients..."
-                        value={query}
-                        onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                        className="w-full sm:w-64"
+                        value={searchValue}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        className="w-full sm:w-48"
                         aria-label="Search clients"
                     />
 
-                    {/* Period Filter with Shadcn Select */}
-                    <Select value={selectedPeriod} onValueChange={(value) => { setSelectedPeriod(value); setPage(1); }}>
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Select Period" />
+                    <Select
+                        value={filters.period || 'all'}
+                        onValueChange={(v) => applyFilter({ period: v, mediator: '' })}
+                    >
+                        <SelectTrigger className="w-[150px] cursor-pointer">
+                            <SelectValue placeholder="Period" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Clients (Total)</SelectItem>
-                            {periods.map((period) => (
-                                <SelectItem key={period} value={period}>
-                                    {period}
+                            <SelectItem value="all">All Time</SelectItem>
+                            {periods.map((p) => (
+                                <SelectItem key={p} value={p}>
+                                    {p}
                                 </SelectItem>
                             ))}
-                            {/* Fallback if no periods */}
-                            {periods.length === 0 && <SelectItem value="loading" disabled>Loading periods...</SelectItem>}
                         </SelectContent>
                     </Select>
 
-                    <Button variant="ghost" onClick={() => { setQuery(''); setSelectedPeriod('all'); setPage(1); }}>Reset</Button>
+                    <Button
+                        className="cursor-pointer"
+                        variant={filters.with_arrears ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => applyFilter({ with_arrears: !filters.with_arrears })}
+                    >
+                        Has Arrears
+                    </Button>
+
+                    <Select
+                        value={filters.mediator || '_all'}
+                        onValueChange={(v) => applyFilter({ mediator: v === '_all' ? '' : v })}
+                        disabled={isMediatorDisabled}
+                    >
+                        <SelectTrigger className="w-[180px] cursor-pointer">
+                            <SelectValue placeholder="Assigned Mediator" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="_all">All Mediators</SelectItem>
+                            {currentUserName && (
+                                <SelectItem value={currentUserName}>My Clients</SelectItem>
+                            )}
+                            {mediators
+                                .filter((m) => m !== currentUserName)
+                                .map((m) => (
+                                    <SelectItem key={m} value={m}>
+                                        {m}
+                                    </SelectItem>
+                                ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Button
+                        className="cursor-pointer"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => router.get('/clients', {}, { preserveState: false })}
+                    >
+                        Reset
+                    </Button>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Button onClick={openFilePicker} disabled={loading}>Import Data</Button>
+                    <Select
+                        value={String(filters.per_page || 20)}
+                        onValueChange={(v) => applyFilter({ per_page: Number(v) })}
+                    >
+                        <SelectTrigger className="w-[95px] cursor-pointer">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="20">20 / pg</SelectItem>
+                            <SelectItem value="50">50 / pg</SelectItem>
+                            <SelectItem value="100">100 / pg</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Button className="cursor-pointer" onClick={() => fileInputRef.current?.click()}>Import Data</Button>
                 </div>
             </div>
 
+            {/* Batch action bar */}
+            {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2">
+                    <span className="text-sm font-medium">
+                        {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''} selected
+                    </span>
+                    <Button className="cursor-pointer" size="sm" onClick={() => onBatchSchedule(Array.from(selectedIds))}>
+                        <Calendar className="mr-2 h-4 w-4" />
+                        Schedule Session
+                    </Button>
+                    <Button variant="ghost" className="cursor-pointer" size="sm" onClick={() => setSelectedIds(new Set())}>
+                        Clear
+                    </Button>
+                </div>
+            )}
+
+            {/* Table */}
             <div className="overflow-hidden rounded-md border text-sm">
                 <table className="w-full table-auto">
                     <thead>
                         <tr className="bg-muted/10 text-left">
-                            <th className="px-4 py-2 cursor-pointer" onClick={() => toggleSort('name')}>Name
-                                {sortKey === 'name' ? (sortDir === 'asc' ? <ChevronUp className="inline-block ml-1 w-4 h-4" /> : <ChevronDown className="inline-block ml-1 w-4 h-4" />) : null}
+                            <th className="w-10 px-4 py-2">
+                                <Checkbox
+                                    className="cursor-pointer"
+                                    checked={allSelected}
+                                    onCheckedChange={toggleSelectAll}
+                                    aria-label="Select all on this page"
+                                />
                             </th>
-                            <th className="px-4 py-2 cursor-pointer" onClick={() => toggleSort('period')}>Period
-                                {sortKey === 'period' ? (sortDir === 'asc' ? <ChevronUp className="inline-block ml-1 w-4 h-4" /> : <ChevronDown className="inline-block ml-1 w-4 h-4" />) : null}
+                            <th className="cursor-pointer px-4 py-2" onClick={() => toggleSort('name')}>
+                                Name <SortIcon col="name" />
                             </th>
-                            <th className="px-4 py-2 text-right cursor-pointer" onClick={() => toggleSort('savings')}>Savings
-                                {sortKey === 'savings' ? (sortDir === 'asc' ? <ChevronUp className="inline-block ml-1 w-4 h-4" /> : <ChevronDown className="inline-block ml-1 w-4 h-4" />) : null}
+                            <th className="px-4 py-2">Mediator</th>
+                            <th className="px-4 py-2">Period</th>
+                            <th className="cursor-pointer px-4 py-2 text-right" onClick={() => toggleSort('savings')}>
+                                Savings <SortIcon col="savings" />
                             </th>
-                            <th className="px-4 py-2 text-right">Loan Balance</th>
-                            <th className="px-4 py-2 text-right cursor-pointer" onClick={() => toggleSort('arrears')}>Arrears
-                                {sortKey === 'arrears' ? (sortDir === 'asc' ? <ChevronUp className="inline-block ml-1 w-4 h-4" /> : <ChevronDown className="inline-block ml-1 w-4 h-4" />) : null}
+                            <th
+                                className="cursor-pointer px-4 py-2 text-right"
+                                onClick={() => toggleSort('loan_balance')}
+                            >
+                                Loan Balance <SortIcon col="loan_balance" />
+                            </th>
+                            <th
+                                className="cursor-pointer px-4 py-2 text-right"
+                                onClick={() => toggleSort('arrears')}
+                            >
+                                Arrears <SortIcon col="arrears" />
                             </th>
                             <th className="px-4 py-2 text-right">Fines</th>
-                            <th className="px-4 py-2"> </th>
+                            <th className="px-4 py-2" />
                         </tr>
                     </thead>
                     <tbody>
-                        {loading ? (
-                            Array.from({ length: 6 }).map((_, i) => (
-                                <tr key={i} className="animate-pulse border-t border-border">
-                                    <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-32" /></td>
-                                    <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-20" /></td>
-                                    <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-20 ml-auto" /></td>
-                                    <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-20 ml-auto" /></td>
-                                    <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-12 ml-auto" /></td>
-                                    <td className="px-4 py-3"></td>
-                                    <td className="px-4 py-3"></td>
-                                </tr>
-                            ))
-                        ) : clients.length ? (
+                        {clients.length === 0 ? (
+                            <tr>
+                                <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                                    No clients found for this period.
+                                </td>
+                            </tr>
+                        ) : (
                             clients.map((c) => (
                                 <tr
                                     key={`${c.client_id}-${c.period}`}
-                                    onClick={() => handleRowClick(c)}
-                                    className={`cursor-pointer hover:bg-muted/10 border-t border-border ${selectedClient?.client_id === c.client_id ? 'bg-muted/20' : ''}`}
+                                    onClick={() => router.visit(`/clients/${c.client_id}`)}
+                                    className="cursor-pointer border-t border-border hover:bg-muted/10"
                                 >
+                                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                        <Checkbox
+                                            className="cursor-pointer"
+                                            checked={selectedIds.has(c.client_id)}
+                                            onCheckedChange={() => toggleRow(c.client_id)}
+                                            aria-label={`Select ${c.name}`}
+                                        />
+                                    </td>
                                     <td className="px-4 py-3 font-medium">{c.name}</td>
+                                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                                        {c.assigned_mediator ?? '—'}
+                                    </td>
                                     <td className="px-4 py-3 text-muted-foreground">{c.period}</td>
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.savings)}</td>
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.loan_balance)}</td>
-                                    <td className={`px-4 py-3 text-right ${c.arrears > 0 ? 'text-red-500 font-bold' : ''}`}>{formatCurrency(c.arrears)}</td>
+                                    <td className="px-4 py-3 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            {c.arrears > 0 ? (
+                                                <Badge variant="destructive" className="text-xs">
+                                                    {formatCurrency(c.arrears)}
+                                                </Badge>
+                                            ) : (
+                                                <span>{formatCurrency(c.arrears)}</span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.fines)}</td>
                                     <td className="px-4 py-3">
-                                        <div className="flex gap-2 justify-end">
-                                            <Button type="button" size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleRowClick(c); }}>View</Button>
+                                        <div className="flex justify-end gap-2">
+                                            <Link
+                                                href={`/clients/${c.client_id}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <Button type="button" size="sm" variant="outline" asChild>
+                                                    <span>View</span>
+                                                </Button>
+                                            </Link>
                                         </div>
                                     </td>
                                 </tr>
                             ))
-                        ) : (
-                            <tr>
-                                <td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No clients found for this period.</td>
-                            </tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">Showing {totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} - {Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}</div>
+            <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                    Showing {showingFrom}–{showingTo} of {total}
+                </div>
                 <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
-                    <div className="text-sm">Page {page} / {totalPages}</div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+                    <Button
+                        className="cursor-pointer"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                    >
+                        Prev
+                    </Button>
+                    <div className="text-sm">
+                        Page {currentPage} / {lastPage}
+                    </div>
+                    <Button
+                        className="cursor-pointer"
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === lastPage}
+                    >
+                        Next
+                    </Button>
                 </div>
             </div>
-
-            {/* Sidebar */}
-            <ClientSidebar client={selectedClient} isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
         </div>
     );
 }

@@ -26,12 +26,13 @@ A desktop-oriented internal tool for financial cooperative mediators. It tracks 
 
 ### Pages
 - **Dashboard** (`/`) — Landing page for mediators. Will contain analytics cards, statistics summaries, and short overview tables. Currently a skeleton/placeholder layout awaiting future implementation.
-- **Clients** (`/clients`) — Paginated client list with search (by name/ID), period filter, and Excel import. This is the primary data interaction surface. Clicking a row opens the Client Sidebar.
+- **Clients** (`/clients`) — Paginated client list with search (by name/ID), period filter, and Excel import. This is the primary data interaction surface. Clicking a row navigates to the Client Detail page.
+- **Client Detail** (`/clients/{id}`) — Full-page view for a single client. Two-column layout: left has period filter + financial cards; right has assigned mediator, mediation stats, and remarks. Data is passed as Inertia server-side props (all `financial_records` + `total_financials`); period filtering is done client-side via `useMemo`. Breadcrumb: `Clients > {name}`.
 - **Mediation** (`/mediation`) — Table of scheduled mediation sessions. Shows upcoming/past mediation schedules with client, date, mediator, and status columns.
 
 ### Shared Patterns
-- **Client Sidebar** — Slides open on row click in the Clients page. Shows: financial metrics, session history, remarks input. Do not navigate away from the table to show details.
-- **Period Filter** — "All Time" aggregates across all periods; selecting a specific period filters to that cohort only. Used on the Clients page.
+- **Period Filter** — "All Time" aggregates across all periods; selecting a specific period filters to that cohort only. Used on both the Clients list and the Client Detail page.
+- **Client navigation** — Row click on the Clients table uses `router.visit(`/clients/${id}`)`; the View button is an Inertia `<Link href={`/clients/${id}`}>`. Do NOT add a `clientShow` helper to `resources/js/routes/index.ts` — that file is Wayfinder auto-generated and strips manual additions on save.
 
 ## Financial Fields (on every client record)
 `fixed_deposit`, `savings`, `loan_balance`, `arrears`, `fines`, `mortuary` — always `decimal`/`numeric`, never float.
