@@ -288,17 +288,29 @@ class ClientController extends Controller
         ]);
     }
 
-    /**
-     * Soft delete client
-     */
     public function destroy($id)
     {
-        $client = Client::findOrFail($id);
-        $client->delete(); // Cascades financial records if DB set up, otherwise purely Client deletion
+        $client = Client::where('client_id', $id)->firstOrFail();
+        $name = $client->name;
+        $client->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Client deleted successfully'
+        return redirect()->route('clients')->with('flash', [
+            'delete' => ['message' => "{$name} has been deleted."],
+        ]);
+    }
+
+    public function batchDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'client_ids'   => 'required|array|min:1',
+            'client_ids.*' => 'integer|exists:clients,client_id',
+        ]);
+
+        $count = Client::whereIn('client_id', $validated['client_ids'])->count();
+        Client::whereIn('client_id', $validated['client_ids'])->delete();
+
+        return redirect()->back()->with('flash', [
+            'delete' => ['message' => "{$count} client(s) deleted."],
         ]);
     }
 

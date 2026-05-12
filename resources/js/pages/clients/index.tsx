@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import BatchScheduleModal from '@/components/BatchScheduleModal';
 import ClientTable from '@/components/ClientTable';
+import DeleteClientsModal from '@/components/DeleteClientsModal';
 import AppLayout from '@/layouts/app-layout';
 import { clients as clientsRoute, dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -41,6 +42,7 @@ type Flash = {
     import?: { imported: number; failed: number };
     import_error?: string;
     batch_schedule?: { scheduled: number[]; already_scheduled: number[] };
+    delete?: { message: string };
 };
 
 type PageProps = {
@@ -106,6 +108,19 @@ function FlashAlert({ flash, onDismiss }: { flash: Flash; onDismiss: () => void 
         );
     }
 
+    if (flash.delete) {
+        return (
+            <Alert className="relative pr-10">
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertTitle>Deleted</AlertTitle>
+                <AlertDescription>{flash.delete.message}</AlertDescription>
+                <button className="absolute right-3 top-3 text-muted-foreground hover:text-foreground" onClick={onDismiss} aria-label="Dismiss">
+                    <XCircle className="h-4 w-4" />
+                </button>
+            </Alert>
+        );
+    }
+
     return null;
 }
 
@@ -113,6 +128,8 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
     const { auth, flash } = usePage<PageProps>().props;
     const [modalOpen, setModalOpen] = useState(false);
     const [scheduledIds, setScheduledIds] = useState<number[]>([]);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [pendingDeleteClients, setPendingDeleteClients] = useState<{ id: number; name: string }[]>([]);
     const [flashDismissed, setFlashDismissed] = useState(false);
 
     // Reset dismissed state whenever flash content changes (new redirect)
@@ -139,6 +156,11 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
         setModalOpen(true);
     };
 
+    const openDeleteModal = (clients: { id: number; name: string }[]) => {
+        setPendingDeleteClients(clients);
+        setDeleteModalOpen(true);
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Clients" />
@@ -159,6 +181,7 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
                     filters={filters}
                     currentUserName={auth.user.name}
                     onBatchSchedule={openBatchModal}
+                    onBatchDelete={openDeleteModal}
                 />
             </div>
             <BatchScheduleModal
@@ -167,6 +190,12 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
                 periods={periods}
                 defaultPeriod={filters.period !== 'all' ? filters.period : (periods[0] ?? '')}
                 onClose={() => setModalOpen(false)}
+            />
+            <DeleteClientsModal
+                isOpen={deleteModalOpen}
+                clients={pendingDeleteClients}
+                mode="batch"
+                onClose={() => setDeleteModalOpen(false)}
             />
         </AppLayout>
     );

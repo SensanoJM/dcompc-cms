@@ -5,8 +5,9 @@ import { clients } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
 import {
     DollarSign, Clock, Plus, History, Check, FilePenLine,
-    TrendingUp, TrendingDown, Minus, Calendar as CalendarIcon, X,
+    TrendingUp, TrendingDown, Minus, Calendar as CalendarIcon, X, Trash2,
 } from 'lucide-react';
+import DeleteClientsModal from '@/components/DeleteClientsModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -80,6 +81,7 @@ export default function ClientShow({ client }: Props) {
     const [isEditingMediator, setIsEditingMediator] = useState(false);
     const [remarks, setRemarks] = useState<Remark[]>(MOCK_REMARKS);
     const [newRemark, setNewRemark] = useState('');
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Clients', href: clients().url },
@@ -331,6 +333,15 @@ export default function ClientShow({ client }: Props) {
                                 <History className="h-4 w-4" />
                                 View Logs
                             </Button>
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                className="col-span-2 w-full gap-2"
+                                onClick={() => setDeleteModalOpen(true)}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Delete Client
+                            </Button>
                         </div>
 
                         {/* Assigned mediator */}
@@ -414,6 +425,12 @@ export default function ClientShow({ client }: Props) {
                     </div>
                 </div>
             </div>
+            <DeleteClientsModal
+                isOpen={deleteModalOpen}
+                clients={[{ id: client.client_id, name: client.name }]}
+                mode="single"
+                onClose={() => setDeleteModalOpen(false)}
+            />
         </AppLayout>
     );
 }

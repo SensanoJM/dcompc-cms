@@ -31,8 +31,10 @@ Route::get('/', function () {
 Route::get('/clients', [\App\Http\Controllers\ClientController::class, 'index'])->name('clients');
 Route::post('/clients/import', [\App\Http\Controllers\ExcelController::class, 'importWeb'])->name('clients.import');
 Route::post('/clients/batch-schedule', [\App\Http\Controllers\ClientController::class, 'batchSchedule'])->name('clients.batch-schedule');
+Route::post('/clients/batch-delete', [\App\Http\Controllers\ClientController::class, 'batchDestroy'])->name('clients.batch-delete');
 
 Route::get('/clients/{id}', [\App\Http\Controllers\ClientController::class, 'show'])->name('clients.show');
+Route::delete('/clients/{id}', [\App\Http\Controllers\ClientController::class, 'destroy'])->name('clients.destroy');
 
 Route::get('/mediation', function () {
     return Inertia::render('mediation');

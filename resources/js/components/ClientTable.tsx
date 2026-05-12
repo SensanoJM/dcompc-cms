@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Filters } from '@/pages/clients/index';
 import { Link, router } from '@inertiajs/react';
-import { Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 type Client = {
@@ -34,6 +34,7 @@ type ClientTableProps = {
     filters: Filters;
     currentUserName: string;
     onBatchSchedule: (ids: number[]) => void;
+    onBatchDelete: (clients: { id: number; name: string }[]) => void;
 };
 
 const formatCurrency = (value: number) =>
@@ -64,6 +65,7 @@ export default function ClientTable({
     filters,
     currentUserName,
     onBatchSchedule,
+    onBatchDelete,
 }: ClientTableProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -256,6 +258,21 @@ export default function ClientTable({
                     <Button className="cursor-pointer" size="sm" onClick={() => onBatchSchedule(Array.from(selectedIds))}>
                         <Calendar className="mr-2 h-4 w-4" />
                         Schedule Session
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        className="cursor-pointer"
+                        onClick={() =>
+                            onBatchDelete(
+                                clients
+                                    .filter((c) => selectedIds.has(c.client_id))
+                                    .map((c) => ({ id: c.client_id, name: c.name })),
+                            )
+                        }
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
                     </Button>
                     <Button variant="ghost" className="cursor-pointer" size="sm" onClick={() => setSelectedIds(new Set())}>
                         Clear
