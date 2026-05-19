@@ -1,5 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import BatchScheduleModal from '@/components/BatchScheduleModal';
+import ClientDetailSheet from '@/components/ClientDetailSheet';
 import ClientTable from '@/components/ClientTable';
 import DeleteClientsModal from '@/components/DeleteClientsModal';
 import AppLayout from '@/layouts/app-layout';
@@ -131,6 +132,7 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [pendingDeleteClients, setPendingDeleteClients] = useState<{ id: number; name: string }[]>([]);
     const [flashDismissed, setFlashDismissed] = useState(false);
+    const [selectedClient, setSelectedClient] = useState<{ id: number; name: string } | null>(null);
 
     // Reset dismissed state whenever flash content changes (new redirect)
     useEffect(() => {
@@ -161,6 +163,9 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
         setDeleteModalOpen(true);
     };
 
+    const openSheet = (id: number, name: string) => setSelectedClient({ id, name });
+    const closeSheet = () => setSelectedClient(null);
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Clients" />
@@ -182,6 +187,7 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
                     currentUserName={auth.user.name}
                     onBatchSchedule={openBatchModal}
                     onBatchDelete={openDeleteModal}
+                    onRowClick={openSheet}
                 />
             </div>
             <BatchScheduleModal
@@ -194,8 +200,17 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
             <DeleteClientsModal
                 isOpen={deleteModalOpen}
                 clients={pendingDeleteClients}
-                mode="batch"
+                mode={pendingDeleteClients.length === 1 ? 'single' : 'batch'}
                 onClose={() => setDeleteModalOpen(false)}
+            />
+            <ClientDetailSheet
+                clientId={selectedClient?.id ?? null}
+                clientName={selectedClient?.name ?? ''}
+                periods={periods}
+                defaultPeriod={filters.period !== 'all' ? filters.period : (periods[0] ?? '')}
+                onClose={closeSheet}
+                onSchedule={(ids) => { openBatchModal(ids); }}
+                onDelete={(c) => { openDeleteModal(c); }}
             />
         </AppLayout>
     );

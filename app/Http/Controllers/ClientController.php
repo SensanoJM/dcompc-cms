@@ -168,40 +168,6 @@ class ClientController extends Controller
     }
 
     /**
-     * Display the client detail page via Inertia.
-     */
-    public function show($id)
-    {
-        $client = Client::where('client_id', $id)
-            ->with(['financialRecords' => function ($query) {
-                $query->orderBy('uploaded_date', 'desc');
-            }])
-            ->firstOrFail();
-
-        $totals = DB::table('client_financial_records')
-            ->where('client_id', $client->client_id)
-            ->select(
-                DB::raw('SUM(savings) as savings'),
-                DB::raw('SUM(fixed_deposit) as fixed_deposit'),
-                DB::raw('SUM(loan_balance) as loan_balance'),
-                DB::raw('SUM(arrears) as arrears'),
-                DB::raw('SUM(fines) as fines'),
-                DB::raw('SUM(mortuary) as mortuary')
-            )
-            ->first();
-
-        return Inertia::render('clients/show', [
-            'client' => [
-                'client_id'        => $client->client_id,
-                'name'             => $client->name,
-                'period'           => $client->financialRecords->first()?->period,
-                'financial_records' => $client->financialRecords,
-                'total_financials' => $totals,
-            ],
-        ]);
-    }
-
-    /**
      * Create new client (manual entry)
      */
     public function store(Request $request)

@@ -45,6 +45,7 @@ export default function BatchScheduleModal({
                 period,
             },
             {
+                preserveState: true,
                 onSuccess: () => {
                     setSubmitting(false);
                     setSessionDate('');

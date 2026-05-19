@@ -4,7 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Filters } from '@/pages/clients/index';
-import { Link, router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -35,6 +35,7 @@ type ClientTableProps = {
     currentUserName: string;
     onBatchSchedule: (ids: number[]) => void;
     onBatchDelete: (clients: { id: number; name: string }[]) => void;
+    onRowClick: (id: number, name: string) => void;
 };
 
 const formatCurrency = (value: number) =>
@@ -66,6 +67,7 @@ export default function ClientTable({
     currentUserName,
     onBatchSchedule,
     onBatchDelete,
+    onRowClick,
 }: ClientTableProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -314,13 +316,12 @@ export default function ClientTable({
                                 Arrears <SortIcon col="arrears" />
                             </th>
                             <th className="px-4 py-2 text-right">Fines</th>
-                            <th className="px-4 py-2" />
-                        </tr>
+                                </tr>
                     </thead>
                     <tbody>
                         {clients.length === 0 ? (
                             <tr>
-                                <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                                <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
                                     No clients found for this period.
                                 </td>
                             </tr>
@@ -328,7 +329,7 @@ export default function ClientTable({
                             clients.map((c) => (
                                 <tr
                                     key={`${c.client_id}-${c.period}`}
-                                    onClick={() => router.visit(`/clients/${c.client_id}`)}
+                                    onClick={() => onRowClick(c.client_id, c.name)}
                                     className="cursor-pointer border-t border-border hover:bg-muted/10"
                                 >
                                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -358,18 +359,6 @@ export default function ClientTable({
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">{formatCurrency(c.fines)}</td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex justify-end gap-2">
-                                            <Link
-                                                href={`/clients/${c.client_id}`}
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                <Button type="button" size="sm" variant="outline" asChild>
-                                                    <span>View</span>
-                                                </Button>
-                                            </Link>
-                                        </div>
-                                    </td>
                                 </tr>
                             ))
                         )}

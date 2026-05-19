@@ -1,60 +1,109 @@
-# Client Detail Page Refactor
+# Client Detail Refactor History
+
+---
+
+## Iteration 2 — Sidebar Sheet (current)
 
 **Status:** Completed  
-**Date:** 2026-05-02  
+**Date:** 2026-05-19  
 **Branch:** develop
 
-## What Changed
+### What Changed
+
+The full Inertia page at `/clients/{id}` was replaced with a slide-in `Sheet` component (`ClientDetailSheet`) mounted directly on the `clients/index.tsx` table page. The goal was to keep mediators in the table context while viewing client financials.
+
+Remarks History and Client Info were removed from the sidebar entirely — they are deferred to the mediation module.
+
+### Files Added
+- `resources/js/components/ClientDetailSheet.tsx` — Self-contained sheet component. Fetches `/api/clients/{id}` on open, shows loading skeleton, renders Financial Overview with period/comparison selectors, Net Position summary, and isolated action buttons.
+
+### Files Modified
+- `resources/js/pages/clients/index.tsx` — Added `selectedClient` state; `openSheet`/`closeSheet` helpers; passes `onRowClick={openSheet}` to `ClientTable`; mounts `ClientDetailSheet`; fixed `DeleteClientsModal` mode to be dynamic (`'single' | 'batch'`).
+- `resources/js/components/ClientTable.tsx` — Added `onRowClick` prop; row click calls `onRowClick(id, name)` instead of navigating; removed the "View" link column; fixed empty-state `colSpan` (9 → 8).
+- `resources/js/components/BatchScheduleModal.tsx` — Added `preserveState: true` to `router.post` so React state (including open sheet) is preserved after the schedule redirect.
+- `app/Http/Controllers/ClientController.php` — Removed `show()` method (was rendering Inertia page).
+- `routes/web.php` — Removed `GET /clients/{id}` Inertia route. The API route `GET /api/clients/{id}` (`Api\ClientController@show`) is kept — that is what `ClientDetailSheet` fetches from.
+
+### Files Deleted
+- `resources/js/pages/clients/show.tsx` — Full client detail page no longer needed.
+
+### Sheet Layout
+
+```
+┌──────────────────────────────┐
+│  Client Name                 │  ← SheetHeader (sticky)
+│  #1234                       │
+├──────────────────────────────┤
+│  [ Schedule Session ▶ ]      │  ← Full-width primary CTA
+├──────────────────────────────┤  scrollable ↓
+│  Financial Overview          │
+│  Period [▼]  Compare [▼]     │  ← 2-col grid, outside the data rows
+│                              │
+│  ASSETS                      │
+│  Savings          ₱12,345    │
+│  Fixed Deposit     ₱5,000    │
+│                              │
+│  LIABILITIES                 │
+│  Loan Balance      ₱8,000    │
+│  Arrears           ₱1,200    │
+│  Fines               ₱150    │
+│  Mortuary            ₱500    │
+│                              │
+│  NET POSITION                │
+│  Total Assets     ₱17,345    │
+│  Total Liabilities ₱9,850    │
+│  ─────────────────────────   │
+│  Net Worth         ₱7,495    │
+├──────────────────────────────┤
+│  DANGER ZONE                 │  ← sticky at bottom, never scrolls
+│  [ 🗑 Delete Client ]        │
+└──────────────────────────────┘
+```
+
+### Design Decisions
+- **Schedule and Delete are never adjacent.** Schedule is a primary button near the top; Delete is pinned to the bottom in a labelled Danger Zone, separated by the full financial section.
+- **Sticky Danger Zone.** The delete button is always visible without scrolling so mediators can act quickly, but its physical distance from Schedule prevents accidental clicks.
+- **Net Position summary.** Computed client-side from `displayData`; gives mediators an instant financial health read without needing to mentally sum the rows.
+- **Period selectors outside the card.** Moved from a cramped card header to a labelled 2-column grid above the data — cleaner hierarchy, easier to use on a narrow panel.
+- **`defaultPeriod` is applied on open.** When the table is filtered to a specific period, the sheet defaults to that same period instead of always starting on "All Time".
+- **`preserveState: true` on schedule.** Prevents Inertia from resetting React component state after the POST redirect, keeping the sheet open post-scheduling.
+
+### Data Flow
+
+```
+Row click → openSheet(id, name)
+  → ClientDetailSheet mounts with clientId
+    → GET /api/clients/{id}  (Api\ClientController@show)
+      → { data: { client_id, name, financial_records[], total_financials } }
+    → period/comparison filtering via useMemo (client-side, no round-trips)
+    → Net Position computed from displayData
+```
+
+---
+
+## Iteration 1 — Full Inertia Page (superseded)
+
+**Status:** Superseded by Iteration 2  
+**Date:** 2026-05-02  
+**Branch:** develop
 
 The `ClientSidebar` (a 400px slide-over drawer) was replaced with a full Inertia page at `/clients/{id}`.
 
 ### Files Added
-- `resources/js/pages/clients/show.tsx` — New two-column client detail page (Inertia page component)
+- `resources/js/pages/clients/show.tsx` — Two-column client detail page.
 
 ### Files Modified
-- `routes/web.php` — Added `GET /clients/{id}` → `ClientController@show` (named `clients.show`)
-- `app/Http/Controllers/ClientController.php` — `show()` now returns `Inertia::render('clients/show', ['client' => ...])` instead of JSON. Passes `financial_records` + `total_financials` as props.
-- `resources/js/components/ClientTable.tsx` — Row click uses `router.visit(clientShow.url(id))`; View button is an Inertia `<Link>`. All sidebar state removed.
-- `resources/js/routes/index.ts` — No change needed. `routes/index.ts` is Wayfinder auto-generated; manual additions are stripped by the formatter on save. `ClientTable.tsx` uses `` `/clients/${c.client_id}` `` directly instead.
+- `routes/web.php` — Added `GET /clients/{id}` → `ClientController@show` (named `clients.show`).
+- `app/Http/Controllers/ClientController.php` — `show()` returned `Inertia::render('clients/show', [...])`.
+- `resources/js/components/ClientTable.tsx` — Row click used `router.visit('/clients/${id}')`.
 
 ### Files Deleted
-- `resources/js/components/ClientSidebar.tsx` — Fully replaced by the new page.
+- `resources/js/components/ClientSidebar.tsx`
 
-## Page Layout
+### Deferred items from this iteration (still pending)
 
-Two-column layout (`lg:grid-cols-2`):
-
-| Left column | Right column |
+| Feature | What needs doing |
 |---|---|
-| Period filter (Select) | Quick actions (Schedule / View Logs) |
-| Compare-with filter (Select) | Assigned Mediator (mock edit) |
-| 6 financial cards (2-col grid) | Mediation Stats (mock: 2) |
-| | Remarks History (mock data) |
-
-Breadcrumb: `Clients > {client.name}`
-
-## Data Flow
-
-```
-GET /clients/{id}
-  → ClientController@show
-    → Eloquent: Client + financialRecords (ordered by uploaded_date desc)
-    → DB::table totals (SUM per financial field)
-    → Inertia::render('clients/show', { client: { ..., financial_records, total_financials } })
-      → resources/js/pages/clients/show.tsx
-        → period filtering + comparison logic via useMemo (client-side, no round-trips)
-```
-
-## Deferred / Mock Items (to tackle next)
-
-The following features carry forward as mock/placeholder from the old sidebar — they are **not wired to real data** yet:
-
-| Feature | Current state | What needs doing |
-|---|---|---|
-| **Remarks** | `MOCK_REMARKS` hardcoded array | Create `remarks` DB table + API endpoints |
-| **Mediation Stats** (Times Scheduled) | Hardcoded `2` | Wire to `COUNT` of `session_clients` for this client |
-| **Mediator editing** | UI-only (closes edit mode, no API call) | `PATCH /api/clients/{id}/mediator` endpoint |
-
-## Next Planned Refactor
-
-`ClientTable.tsx` is also scheduled for a refactor. It currently fetches data via `axios` on mount — the plan is to migrate it to Inertia server-side props following the same pattern used for `clients/show.tsx`.
+| **Remarks History** | To be built in the mediation module |
+| **Client Info panel** | To be built in the mediation module |
+| **Mediation Stats** | Wire to `COUNT` of `session_clients` for the client |
