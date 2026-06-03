@@ -170,6 +170,10 @@ class ClientController extends Controller
         // Attach totals to the response
         $client->total_financials = $totals;
 
+        $client->times_scheduled = DB::table('session_clients')
+            ->where('client_id', $client->client_id)
+            ->count();
+
         return response()->json([
             'success' => true,
             'data' => $client

@@ -35,6 +35,7 @@ interface ClientFinancialRecord {
 interface ClientDetail {
     client_id: number;
     name: string;
+    times_scheduled?: number;
     financial_records?: ClientFinancialRecord[];
     total_financials?: {
         savings: number;
@@ -281,6 +282,18 @@ export default function ClientDetailSheet({
                             Schedule Session
                         </Button>
                     </div>
+
+                    {/* Session count */}
+                    {clientDetail && (
+                        <div className="border-t px-6 py-3">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Times Scheduled</span>
+                                <span className="font-semibold tabular-nums">
+                                    {clientDetail.times_scheduled ?? 0}
+                                </span>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Financial overview */}
                     <div className="border-t px-6 py-5">

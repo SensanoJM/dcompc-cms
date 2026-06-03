@@ -90,7 +90,7 @@ useEffect(() => {
 
 **Dropped from list view:** Fixed Deposit, Mortuary, Times Scheduled — detail-page fields.
 
-**Out of scope (Q5):** Times Scheduled requires a `COUNT` join on `session_clients` per client — separate ticket after batch schedule is live.
+**Out of scope (Q5):** Times Scheduled column requires a `COUNT` join on `session_clients` per client row in the paginator — see TICKET-10. The count itself is now live in `ClientDetailSheet` (TICKET-04, done 2026-05-27).
 
 ### Q6 — URL State Shape
 **Decision:**
@@ -136,7 +136,7 @@ useEffect(() => {
 | **"Add to existing session" in batch schedule** | Scope — new session only for now | Follow-up after batch schedule is live |
 | **Materialized view for "All Time" aggregate** | Known bottleneck at 3k+ clients — not felt yet | Tackle when mediators report sluggishness |
 | **`pg_trgm` trigram index for name search** | Acceptable full-scan at cooperative scale | Revisit if search latency becomes a complaint |
-| **Times Scheduled column** | Needs `COUNT` join on `session_clients` | After batch schedule feature is live |
+| **Times Scheduled column** | Needs `COUNT` join on `session_clients` per row in the paginator | After TICKET-04 is stable — count query is proven; see TICKET-10 |
 | **Dedicated import page** | Row-level error reporting not needed yet | When import validation requirements grow |
 | **Remarks DB table + API** | Mock data in `show.tsx` | Separate ticket |
 | **Mediator assignment `PATCH` endpoint** | UI-only stub in `show.tsx` | Separate ticket |

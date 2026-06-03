@@ -35,9 +35,7 @@ Route::post('/clients/batch-delete', [\App\Http\Controllers\ClientController::cl
 
 Route::delete('/clients/{id}', [\App\Http\Controllers\ClientController::class, 'destroy'])->name('clients.destroy');
 
-Route::get('/mediation', function () {
-    return Inertia::render('mediation');
-})->name('mediation');
+Route::get('/mediation', [\App\Http\Controllers\SessionController::class, 'index'])->name('mediation');
 
 
 // API endpoints for clients (used by SPA table)

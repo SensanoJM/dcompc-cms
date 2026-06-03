@@ -6,7 +6,8 @@
 
 **Status:** Completed  
 **Date:** 2026-05-19  
-**Branch:** develop
+**Branch:** develop  
+**Backlog impact:** Scheduling backlog TICKET-03 through TICKET-07 referenced `show.tsx` — all re-targeted to `ClientDetailSheet.tsx` / `Api\ClientController` on 2026-05-23.
 
 ### What Changed
 
@@ -59,6 +60,21 @@ Remarks History and Client Info were removed from the sidebar entirely — they 
 │  [ 🗑 Delete Client ]        │
 └──────────────────────────────┘
 ```
+
+### Completed items (this iteration)
+
+| Feature | Status | Ticket |
+|---|---|---|
+| **Schedule Session** | ✅ Done 2026-05-27 — `onSchedule` in `clients/index.tsx` already wired to `openBatchModal`; confirmed working | TICKET-03 |
+| **Times Scheduled** | ✅ Done 2026-05-27 — `Api\ClientController@show` returns count from `session_clients`; displayed in sheet between schedule button and financial overview | TICKET-04 |
+
+### Remaining items in this iteration
+
+| Feature | What needs doing | Ticket |
+|---|---|---|
+| **Session History** | Add `session_history` to API response; collapsible "View Logs" section above Danger Zone | TICKET-05 |
+| **Mediator assignment edit** | Add display + inline edit UI to sheet; add `PATCH /api/clients/{id}/mediator` endpoint | TICKET-07 |
+| **Remarks History** | Deferred to mediation module | TICKET-06 |
 
 ### Design Decisions
 - **Schedule and Delete are never adjacent.** Schedule is a primary button near the top; Delete is pinned to the bottom in a labelled Danger Zone, separated by the full financial section.
