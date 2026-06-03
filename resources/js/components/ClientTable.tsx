@@ -47,7 +47,7 @@ const buildParams = (filters: Filters, overrides: Partial<Filters & { page: numb
     const merged = { ...filters, page: 1, ...overrides };
     const p: Record<string, string> = {};
     if (merged.search) p.search = merged.search;
-    if (merged.period && merged.period !== 'all') p.period = merged.period;
+    if (merged.period) p.period = merged.period;
     if (merged.with_arrears) p.with_arrears = '1';
     if (merged.mediator) p.mediator = merged.mediator;
     if (merged.sort_by && merged.sort_by !== 'name') p.sort_by = merged.sort_by;
@@ -148,7 +148,7 @@ export default function ClientTable({
     const { total, currentPage, lastPage, perPage } = pagination;
     const showingFrom = total === 0 ? 0 : (currentPage - 1) * perPage + 1;
     const showingTo = Math.min(currentPage * perPage, total);
-    const isMediatorDisabled = !filters.period || filters.period === 'all';
+    const isMediatorDisabled = !filters.period;
 
     return (
         <div className="w-full space-y-4">
@@ -174,14 +174,13 @@ export default function ClientTable({
                     />
 
                     <Select
-                        value={filters.period || 'all'}
+                        value={filters.period || undefined}
                         onValueChange={(v) => applyFilter({ period: v, mediator: '' })}
                     >
                         <SelectTrigger className="w-[150px] cursor-pointer">
                             <SelectValue placeholder="Period" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Time</SelectItem>
                             {periods.map((p) => (
                                 <SelectItem key={p} value={p}>
                                     {p}

@@ -27,39 +27,13 @@ class ClientController extends Controller
             ->orderBy('assigned_mediator')
             ->pluck('assigned_mediator');
 
-        $selectedPeriod = $request->input('period', 'all');
+        $selectedPeriod = $request->input('period') ?? ClientFinancialRecord::max('period');
 
         $query = Client::query();
 
         $financialFields = ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'];
 
-        if ($selectedPeriod === 'all') {
-            $sums = DB::table('client_financial_records')
-                ->select(
-                    'client_id',
-                    DB::raw('SUM(fixed_deposit) as fixed_deposit'),
-                    DB::raw('SUM(savings) as savings'),
-                    DB::raw('SUM(loan_balance) as loan_balance'),
-                    DB::raw('SUM(arrears) as arrears'),
-                    DB::raw('SUM(fines) as fines'),
-                    DB::raw('SUM(mortuary) as mortuary')
-                )
-                ->groupBy('client_id');
-
-            $query->leftJoinSub($sums, 'fs', fn($j) => $j->on('clients.client_id', '=', 'fs.client_id'))
-                ->select(
-                    'clients.*',
-                    DB::raw('COALESCE(fs.fixed_deposit, 0) as fixed_deposit'),
-                    DB::raw('COALESCE(fs.savings, 0) as savings'),
-                    DB::raw('COALESCE(fs.loan_balance, 0) as loan_balance'),
-                    DB::raw('COALESCE(fs.arrears, 0) as arrears'),
-                    DB::raw('COALESCE(fs.fines, 0) as fines'),
-                    DB::raw('COALESCE(fs.mortuary, 0) as mortuary'),
-                    DB::raw("'All Time' as period"),
-                    DB::raw('NULL as assigned_mediator')
-                );
-            $alias = 'fs';
-        } else {
+        if ($selectedPeriod) {
             $query->join('client_financial_records as cfr', 'clients.client_id', '=', 'cfr.client_id')
                 ->where('cfr.period', $selectedPeriod)
                 ->select(
@@ -73,19 +47,21 @@ class ClientController extends Controller
                     'cfr.period',
                     'cfr.assigned_mediator'
                 );
-            $alias = 'cfr';
+        } else {
+            $query->select('clients.*');
         }
 
         if ($request->filled('search')) {
             $query->where('clients.name', 'LIKE', '%' . $request->input('search') . '%');
         }
 
-        if ($request->boolean('with_arrears')) {
-            $query->where("{$alias}.arrears", '>', 0);
-        }
-
-        if ($selectedPeriod !== 'all' && $request->filled('mediator')) {
-            $query->where('cfr.assigned_mediator', $request->input('mediator'));
+        if ($selectedPeriod) {
+            if ($request->boolean('with_arrears')) {
+                $query->where('cfr.arrears', '>', 0);
+            }
+            if ($request->filled('mediator')) {
+                $query->where('cfr.assigned_mediator', $request->input('mediator'));
+            }
         }
 
         $sortBy = $request->input('sort_by', 'name');
@@ -93,8 +69,8 @@ class ClientController extends Controller
             ? $request->input('sort_order')
             : 'desc';
 
-        if (in_array($sortBy, $financialFields)) {
-            $query->orderBy("{$alias}.{$sortBy}", $sortOrder);
+        if (in_array($sortBy, $financialFields) && $selectedPeriod) {
+            $query->orderBy("cfr.{$sortBy}", $sortOrder);
         } elseif (in_array($sortBy, ['name', 'client_id'])) {
             $query->orderBy("clients.{$sortBy}", $sortOrder);
         } else {
@@ -113,7 +89,7 @@ class ClientController extends Controller
             'mediators' => $mediators,
             'filters'   => [
                 'search'       => $request->input('search', ''),
-                'period'       => $selectedPeriod,
+                'period'       => $selectedPeriod ?? '',
                 'with_arrears' => $request->boolean('with_arrears'),
                 'mediator'     => $request->input('mediator', ''),
                 'sort_by'      => $sortBy,

@@ -37,20 +37,11 @@ interface ClientDetail {
     name: string;
     times_scheduled?: number;
     financial_records?: ClientFinancialRecord[];
-    total_financials?: {
-        savings: number;
-        fixed_deposit: number;
-        loan_balance: number;
-        arrears: number;
-        fines: number;
-        mortuary: number;
-    };
 }
 
 interface Props {
     clientId: number | null;
     clientName: string;
-    periods: string[];
     defaultPeriod?: string;
     onClose: () => void;
     onSchedule: (ids: number[]) => void;
@@ -75,90 +66,58 @@ export default function ClientDetailSheet({
 }: Props) {
     const [clientDetail, setClientDetail] = useState<ClientDetail | null>(null);
     const [loading, setLoading] = useState(false);
-    const [selectedPeriod, setSelectedPeriod] = useState<string>('all_time');
-    const [comparisonPeriod, setComparisonPeriod] = useState<string>('');
+    const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
 
     useEffect(() => {
         if (!clientId) {
             setClientDetail(null);
+            setSelectedPeriod(null);
             return;
         }
         setLoading(true);
-        setSelectedPeriod(defaultPeriod && defaultPeriod !== '' ? defaultPeriod : 'all_time');
-        setComparisonPeriod('');
         fetch(`/api/clients/${clientId}`)
             .then((r) => r.json())
-            .then((json) => setClientDetail(json.data))
+            .then((json) => {
+                const detail: ClientDetail = json.data;
+                setClientDetail(detail);
+                // Q5 fallback chain: inherit table's period if client has it, else use client's latest
+                const periods = (detail.financial_records ?? [])
+                    .map((r) => r.period)
+                    .filter(Boolean)
+                    .sort();
+                const latestPeriod = periods[periods.length - 1] ?? null;
+                setSelectedPeriod(periods.includes(defaultPeriod ?? '') ? defaultPeriod! : latestPeriod);
+            })
             .finally(() => setLoading(false));
     }, [clientId]);
 
+    // Sorted ascending — lex sort on YYYY-P01 format is chronological
     const availablePeriods = useMemo(() => {
         if (!clientDetail?.financial_records) return [];
-        return clientDetail.financial_records.map((r) => r.period).filter(Boolean);
+        return [...clientDetail.financial_records.map((r) => r.period).filter(Boolean)].sort();
     }, [clientDetail]);
+
+    // Q4: data-previous is the period immediately before selectedPeriod in this client's own record set
+    const dataPreviousPeriod = useMemo(() => {
+        if (!selectedPeriod || availablePeriods.length === 0) return null;
+        const idx = availablePeriods.indexOf(selectedPeriod);
+        return idx > 0 ? availablePeriods[idx - 1] : null;
+    }, [availablePeriods, selectedPeriod]);
 
     const getRecord = (period: string) =>
         clientDetail?.financial_records?.find((r) => r.period === period) ?? null;
 
-    const sum = (a: unknown, b: unknown) => Number(a || 0) + Number(b || 0);
-
     const displayData = useMemo(() => {
-        if (!clientDetail) return null;
-
-        if (selectedPeriod && selectedPeriod !== 'all_time') {
-            const current = getRecord(selectedPeriod);
-
-            if (comparisonPeriod && comparisonPeriod !== 'no_comparison') {
-                const compare = getRecord(comparisonPeriod);
-                return {
-                    ...clientDetail,
-                    ...(current ?? compare ?? {}),
-                    savings: sum(current?.savings, compare?.savings),
-                    fixed_deposit: sum(current?.fixed_deposit, compare?.fixed_deposit),
-                    loan_balance: sum(current?.loan_balance, compare?.loan_balance),
-                    arrears: sum(current?.arrears, compare?.arrears),
-                    fines: sum(current?.fines, compare?.fines),
-                    mortuary: sum(current?.mortuary, compare?.mortuary),
-                };
-            }
-
-            if (current) return { ...clientDetail, ...current };
-        } else {
-            if (clientDetail.total_financials) {
-                return {
-                    ...clientDetail,
-                    savings: Number(clientDetail.total_financials.savings || 0),
-                    fixed_deposit: Number(clientDetail.total_financials.fixed_deposit || 0),
-                    loan_balance: Number(clientDetail.total_financials.loan_balance || 0),
-                    arrears: Number(clientDetail.total_financials.arrears || 0),
-                    fines: Number(clientDetail.total_financials.fines || 0),
-                    mortuary: Number(clientDetail.total_financials.mortuary || 0),
-                };
-            }
-
-            if (clientDetail.financial_records?.length) {
-                const totals = clientDetail.financial_records.reduce(
-                    (acc, r) => ({
-                        savings: sum(acc.savings, r.savings),
-                        fixed_deposit: sum(acc.fixed_deposit, r.fixed_deposit),
-                        loan_balance: sum(acc.loan_balance, r.loan_balance),
-                        arrears: sum(acc.arrears, r.arrears),
-                        fines: sum(acc.fines, r.fines),
-                        mortuary: sum(acc.mortuary, r.mortuary),
-                    }),
-                    { savings: 0, fixed_deposit: 0, loan_balance: 0, arrears: 0, fines: 0, mortuary: 0 },
-                );
-                return { ...clientDetail, ...totals };
-            }
-        }
-
+        if (!clientDetail || !selectedPeriod) return null;
+        const current = getRecord(selectedPeriod);
+        if (current) return { ...clientDetail, ...current };
         return clientDetail;
-    }, [clientDetail, selectedPeriod, comparisonPeriod]);
+    }, [clientDetail, selectedPeriod]);
 
     const comparisonData = useMemo(() => {
-        if (!clientDetail || !comparisonPeriod || selectedPeriod === 'all_time') return null;
+        if (!clientDetail || !selectedPeriod || !dataPreviousPeriod) return null;
         const current = getRecord(selectedPeriod);
-        const compare = getRecord(comparisonPeriod);
+        const compare = getRecord(dataPreviousPeriod);
         if (!current || !compare) return null;
 
         const calc = (cur: number, prev: number) => {
@@ -168,18 +127,18 @@ export default function ClientDetailSheet({
         };
 
         return {
-            savings: calc(current.savings, compare.savings),
-            fixed_deposit: calc(current.fixed_deposit, compare.fixed_deposit),
-            loan_balance: calc(current.loan_balance, compare.loan_balance),
-            arrears: calc(current.arrears, compare.arrears),
-            fines: calc(current.fines, compare.fines),
-            mortuary: calc(current.mortuary, compare.mortuary),
+            savings: calc(Number(current.savings), Number(compare.savings)),
+            fixed_deposit: calc(Number(current.fixed_deposit), Number(compare.fixed_deposit)),
+            loan_balance: calc(Number(current.loan_balance), Number(compare.loan_balance)),
+            arrears: calc(Number(current.arrears), Number(compare.arrears)),
+            fines: calc(Number(current.fines), Number(compare.fines)),
+            mortuary: calc(Number(current.mortuary), Number(compare.mortuary)),
         };
-    }, [clientDetail, selectedPeriod, comparisonPeriod]);
+    }, [clientDetail, selectedPeriod, dataPreviousPeriod]);
 
     const netPosition = useMemo(() => {
         if (!displayData) return null;
-        const d = displayData as Record<string, unknown>;
+        const d = displayData as unknown as Record<string, unknown>;
         const assets = Number(d.savings || 0) + Number(d.fixed_deposit || 0);
         const liabilities =
             Number(d.loan_balance || 0) +
@@ -188,6 +147,14 @@ export default function ClientDetailSheet({
             Number(d.mortuary || 0);
         return { assets, liabilities, netWorth: assets - liabilities };
     }, [displayData]);
+
+    // Q7: three-state subtitle
+    const periodSubtitle = useMemo(() => {
+        if (!selectedPeriod) return '';
+        if (dataPreviousPeriod) return `Showing ${selectedPeriod} · vs ${dataPreviousPeriod}`;
+        if (availablePeriods.length === 1) return selectedPeriod;
+        return `${selectedPeriod} · No prior period`;
+    }, [selectedPeriod, dataPreviousPeriod, availablePeriods]);
 
     const varianceLabel = (percent: number, delta: number) => {
         if (!Number.isFinite(percent)) return delta > 0 ? 'New' : 'Closed';
@@ -250,17 +217,10 @@ export default function ClientDetailSheet({
         );
     };
 
-    const periodSubtitle =
-        selectedPeriod === 'all_time'
-            ? 'All periods combined'
-            : comparisonPeriod
-              ? `${selectedPeriod} vs ${comparisonPeriod}`
-              : selectedPeriod;
-
     return (
         <Sheet open={clientId !== null} onOpenChange={(open) => !open && onClose()}>
             <SheetContent side="right" className="flex w-full flex-col p-0 md:w-[480px]">
-                {/* Header — name and ID only */}
+                {/* Header */}
                 <SheetHeader className="shrink-0 border-b px-6 pb-5 pt-6">
                     <SheetTitle className="text-xl font-bold leading-tight">{clientName}</SheetTitle>
                     <div className="mt-1.5">
@@ -300,52 +260,36 @@ export default function ClientDetailSheet({
                         {/* Section heading */}
                         <div className="mb-4">
                             <h3 className="text-sm font-semibold text-foreground">Financial Overview</h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{periodSubtitle}</p>
+                            {periodSubtitle && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{periodSubtitle}</p>
+                            )}
                         </div>
 
-                        {/* Period selectors */}
+                        {/* Period selector — Q8: plain text when only one period exists */}
                         {availablePeriods.length > 0 && (
-                            <div className="mb-5 grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <p className="text-xs text-muted-foreground">Period</p>
-                                    <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                                        <SelectTrigger className="h-8 w-full text-xs">
-                                            <SelectValue placeholder="Period" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="all_time">All Time</SelectItem>
-                                            {availablePeriods.map((p) => (
-                                                <SelectItem key={p} value={p}>
-                                                    {p}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <p className="text-xs text-muted-foreground">Compare with</p>
-                                    <Select
-                                        value={comparisonPeriod || 'no_comparison'}
-                                        onValueChange={(val) =>
-                                            setComparisonPeriod(val === 'no_comparison' ? '' : val)
-                                        }
-                                        disabled={selectedPeriod === 'all_time'}
-                                    >
-                                        <SelectTrigger className="h-8 w-full text-xs">
-                                            <SelectValue placeholder="Compare" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="no_comparison">None</SelectItem>
-                                            {availablePeriods
-                                                .filter((p) => p !== selectedPeriod)
-                                                .map((p) => (
+                            <div className="mb-5">
+                                {availablePeriods.length === 1 ? (
+                                    <p className="text-xs font-medium text-foreground">{availablePeriods[0]}</p>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        <p className="text-xs text-muted-foreground">Period</p>
+                                        <Select
+                                            value={selectedPeriod ?? ''}
+                                            onValueChange={setSelectedPeriod}
+                                        >
+                                            <SelectTrigger className="h-8 w-full text-xs">
+                                                <SelectValue placeholder="Period" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {[...availablePeriods].reverse().map((p) => (
                                                     <SelectItem key={p} value={p}>
                                                         {p}
                                                     </SelectItem>
                                                 ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
                             </div>
                         )}
 

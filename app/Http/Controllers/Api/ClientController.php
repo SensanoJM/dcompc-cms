@@ -10,58 +10,18 @@ use Illuminate\Support\Facades\DB;
 
 class ClientController extends Controller
 {
-    /**
-     * Return paginated clients as JSON for the frontend table.
-     */
     public function index(Request $request)
     {
-        // 1. Get all available unique periods
         $periods = ClientFinancialRecord::select('period')
             ->distinct()
             ->orderBy('period', 'desc')
             ->pluck('period');
 
-        // 2. Determine the period to show
-        // Default to 'all' as requested
-        $requestPeriod = $request->input('period');
-        $selectedPeriod = $requestPeriod ?? 'all';
+        $selectedPeriod = $request->input('period') ?? ClientFinancialRecord::max('period');
 
-        // 3. Start building the query
         $query = Client::query()->with('sessions');
 
-        // 4. Join with financial records
-        if ($selectedPeriod === 'all') {
-            // "All" view: Get the TOTAL (Sum) financial records for each client
-            $financialSums = DB::table('client_financial_records')
-                ->select(
-                    'client_id',
-                    DB::raw('SUM(fixed_deposit) as fixed_deposit'),
-                    DB::raw('SUM(savings) as savings'),
-                    DB::raw('SUM(loan_balance) as loan_balance'),
-                    DB::raw('SUM(arrears) as arrears'),
-                    DB::raw('SUM(fines) as fines'),
-                    DB::raw('SUM(mortuary) as mortuary')
-                )
-                ->groupBy('client_id');
-
-            // Join the main table to the subquery
-            $query->leftJoinSub($financialSums, 'financial_sums', function ($join) {
-                $join->on('clients.client_id', '=', 'financial_sums.client_id');
-            })
-            ->select(
-                'clients.*',
-                DB::raw('COALESCE(financial_sums.fixed_deposit, 0) as fixed_deposit'),
-                DB::raw('COALESCE(financial_sums.savings, 0) as savings'),
-                DB::raw('COALESCE(financial_sums.loan_balance, 0) as loan_balance'),
-                DB::raw('COALESCE(financial_sums.arrears, 0) as arrears'),
-                DB::raw('COALESCE(financial_sums.fines, 0) as fines'),
-                DB::raw('COALESCE(financial_sums.mortuary, 0) as mortuary'),
-                DB::raw("'All Time' as period"),
-                DB::raw("NULL as assigned_mediator")
-            );
-
-        } elseif ($selectedPeriod) {
-            // Specific Period view: Inner join ensuring we only get clients for that period
+        if ($selectedPeriod) {
             $query->join('client_financial_records', 'clients.client_id', '=', 'client_financial_records.client_id')
                   ->where('client_financial_records.period', $selectedPeriod)
                   ->select(
@@ -76,49 +36,39 @@ class ClientController extends Controller
                        'client_financial_records.assigned_mediator'
                   );
         } else {
-             $query->select('clients.*');
+            $query->select('clients.*');
         }
 
-        // 5. Search
         if ($request->filled('search')) {
             $query->where('clients.name', 'LIKE', "%{$request->search}%");
         }
 
-        // 6. Additional Filters
-        $tableAlias = ($selectedPeriod === 'all') ? 'financial_sums' : 'client_financial_records';
-
-        // Only apply if we have financial records joined (which is true for 'all' and specific period)
         if ($selectedPeriod) {
             if ($request->boolean('with_arrears')) {
-                $query->where("$tableAlias.arrears", '>', 0);
+                $query->where('client_financial_records.arrears', '>', 0);
             }
             if ($request->boolean('with_loans')) {
-                $query->where("$tableAlias.loan_balance", '>', 0);
+                $query->where('client_financial_records.loan_balance', '>', 0);
             }
-             // Filter by date range (uploaded_date). Note: 'all' view sums data, so uploaded_date isn't really applicable or is ambiguous.
-             // We can disable date filter for 'all' or default to not filtering.
-            if ($selectedPeriod !== 'all' && $request->filled('date_from') && $request->filled('date_to')) {
+            if ($request->filled('date_from') && $request->filled('date_to')) {
                 $query->whereBetween('client_financial_records.uploaded_date', [$request->date_from, $request->date_to]);
             }
         }
 
-        // 7. Sorting
         $sortBy = $request->get('sort_by', 'created_at');
         $sortOrder = $request->get('sort_order', 'desc');
 
-        if (in_array($sortBy, ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary'])) {
-             $query->orderBy("$tableAlias.$sortBy", $sortOrder);
+        if (in_array($sortBy, ['savings', 'loan_balance', 'arrears', 'fixed_deposit', 'fines', 'mortuary']) && $selectedPeriod) {
+            $query->orderBy("client_financial_records.$sortBy", $sortOrder);
         } elseif ($sortBy === 'name' || $sortBy === 'client_id') {
-             $query->orderBy("clients.$sortBy", $sortOrder);
+            $query->orderBy("clients.$sortBy", $sortOrder);
         } else {
-             $query->orderBy("clients.created_at", $sortOrder);
+            $query->orderBy("clients.created_at", $sortOrder);
         }
 
-        // 8. Pagination
         $perPage = (int) $request->get('per_page', 20);
         $clients = $query->paginate($perPage)->withQueryString();
 
-        // 9. Return structured response matching frontend expectation
         return response()->json([
             'success' => true,
             'data' => $clients->items(),
@@ -130,45 +80,22 @@ class ClientController extends Controller
             'per_page' => $clients->perPage(),
         ]);
     }
+
     public function show($id)
     {
-        // Fetch client by external ID (or internal UUID if that's how frontend calls it, 
-        // but looking at sidebar logic "client.client_id", it seems to use the external ID).
-        // Let's support both or assume external ID based on context. 
-        // Given 'clients' table has 'client_id' as a unique bigInteger and 'client_uuid' as PK.
-        // If $id is the external ID:
-        
         $client = Client::where('client_id', $id)
-            ->with(['financialRecords' => function($q) {
-                $q->orderBy('uploaded_date', 'desc'); // Latest first
+            ->with(['financialRecords' => function ($q) {
+                $q->orderBy('period', 'desc');
             }])
             ->first();
 
-        // If not found by client_id, maybe try uuid? 
         if (!$client) {
-             $client = Client::where('client_uuid', $id)
-                ->with(['financialRecords' => function($q) {
-                    $q->orderBy('uploaded_date', 'desc');
+            $client = Client::where('client_uuid', $id)
+                ->with(['financialRecords' => function ($q) {
+                    $q->orderBy('period', 'desc');
                 }])
                 ->firstOrFail();
         }
-
-        // Calculate totals dynamically using the database for accuracy
-        // We use the same client identifier found above
-        $totals = DB::table('client_financial_records')
-            ->where('client_id', $client->client_id)
-            ->select(
-                DB::raw('SUM(savings) as savings'),
-                DB::raw('SUM(fixed_deposit) as fixed_deposit'),
-                DB::raw('SUM(loan_balance) as loan_balance'),
-                DB::raw('SUM(arrears) as arrears'),
-                DB::raw('SUM(fines) as fines'),
-                DB::raw('SUM(mortuary) as mortuary')
-            )
-            ->first();
-
-        // Attach totals to the response
-        $client->total_financials = $totals;
 
         $client->times_scheduled = DB::table('session_clients')
             ->where('client_id', $client->client_id)

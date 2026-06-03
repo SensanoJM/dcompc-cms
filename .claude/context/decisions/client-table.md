@@ -42,7 +42,7 @@ useEffect(() => {
 | Filter | Type | Notes |
 |---|---|---|
 | Search | Text input | Name search, `LIKE '%q%'` |
-| Period | Select dropdown | "All Time" = `all`; omit param when `all` |
+| Period | Select dropdown | Defaults to latest period in DB; no "All Time" option (removed — see [financial-overview.md](financial-overview.md)) |
 | Has Arrears | Toggle button | `with_arrears=1` when active, omit when off |
 | Assigned Mediator | Select dropdown | Distinct mediator names from DB + **"My Clients"** chip that pre-fills `auth.user.name` |
 
@@ -74,7 +74,7 @@ useEffect(() => {
 
 **Out of scope (Q4):**
 - `pg_trgm` trigram index for name search.
-- Materialized view / totals cache for the "All Time" aggregate — the `leftJoinSub` GROUP BY scan is the known bottleneck at 3k+ clients × N periods; flag for when mediators report sluggishness on the "All Time" view.
+- ~~Materialized view / totals cache for the "All Time" aggregate~~ — **Obsolete.** "All Time" aggregate removed entirely per [financial-overview.md](financial-overview.md) Q2.
 
 ### Q5 — Column Structure
 **Decision:** Columns in this order:
@@ -96,13 +96,13 @@ useEffect(() => {
 **Decision:**
 
 ```
-/clients?search=john&period=2024-Q1&page=2&per_page=50&sort_by=arrears&sort_order=desc&with_arrears=1&mediator=Maria
+/clients?search=john&period=2025-P03&page=2&per_page=50&sort_by=arrears&sort_order=desc&with_arrears=1&mediator=Maria
 ```
 
 | Param | Default | Omit when default? |
 |---|---|---|
 | `search` | `""` | Yes |
-| `period` | `all` | Yes |
+| `period` | latest (omit = use latest period from DB) | Yes |
 | `page` | `1` | Yes |
 | `per_page` | `20` | Yes |
 | `sort_by` | `name` | Yes |
@@ -134,7 +134,7 @@ useEffect(() => {
 | **WebSocket / Reverb real-time push** | Overkill for current import frequency | Infrastructure decision — revisit if imports become frequent |
 | **`assigned_mediator` ↔ `users` FK link** | String mismatch between imported name and login name | Separate migration + mediator management feature |
 | **"Add to existing session" in batch schedule** | Scope — new session only for now | Follow-up after batch schedule is live |
-| **Materialized view for "All Time" aggregate** | Known bottleneck at 3k+ clients — not felt yet | Tackle when mediators report sluggishness |
+| ~~**Materialized view for "All Time" aggregate**~~ | **Obsolete** — "All Time" removed entirely | N/A |
 | **`pg_trgm` trigram index for name search** | Acceptable full-scan at cooperative scale | Revisit if search latency becomes a complaint |
 | **Times Scheduled column** | Needs `COUNT` join on `session_clients` per row in the paginator | After TICKET-04 is stable — count query is proven; see TICKET-10 |
 | **Dedicated import page** | Row-level error reporting not needed yet | When import validation requirements grow |
@@ -161,7 +161,7 @@ $table->index('assigned_mediator', 'idx_records_mediator');
 
 Full Inertia-aware rewrite. Mirrors the logic in `Api/ClientController@index` but:
 - Returns `Inertia::render('clients/index', [...])` instead of JSON.
-- Supports `period=all` via `leftJoinSub` aggregate.
+- No `period=all` / `leftJoinSub` aggregate — "All Time" removed (see [financial-overview.md](financial-overview.md)). When no period param, defaults to `ClientFinancialRecord::max('period')`.
 - Adds `mediator` filter (new).
 - Adds per-page (20/50/100).
 - Passes `mediators` prop: `ClientFinancialRecord::select('assigned_mediator')->distinct()->whereNotNull('assigned_mediator')->pluck('assigned_mediator')`.

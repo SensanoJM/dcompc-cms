@@ -1,5 +1,7 @@
 # Client Detail Refactor History
 
+> **Note:** The data flow and sheet layout in Iteration 2 reflect the state as of 2026-05-19. The Financial Overview section was subsequently redesigned — see [financial-overview.md](../decisions/financial-overview.md) for the current spec (`total_financials` removed, comparison selectors replaced with auto trend, period format locked to `YYYY-P01`).
+
 ---
 
 ## Iteration 2 — Sidebar Sheet (current)

@@ -93,7 +93,19 @@ class ExcelService
                 $client->name = $clientData['name'];
                 $client->save();
 
-                // 2. Create or Update Financial Record for this Period
+                // 2. Normalize period format to YYYY-P01 canonical form
+                $period = $this->normalizePeriod($financialData['period']);
+                if ($period === null) {
+                    $failed++;
+                    $errors[] = [
+                        'row' => $index + 1,
+                        'errors' => ["Unrecognizable period format '{$financialData['period']}' — expected YYYY-P01 (e.g. 2025-P01)."]
+                    ];
+                    return;
+                }
+                $financialData['period'] = $period;
+
+                // 3. Create or Update Financial Record for this Period
                 // We use updateOrCreate to avoid duplicates for the same client+period
                 $client->financialRecords()->updateOrCreate(
                     ['period' => $financialData['period']],
@@ -197,6 +209,30 @@ class ExcelService
         } catch (\Exception $e) {
             return now()->format('Y-m-d');
         }
+    }
+
+    private function normalizePeriod(string $raw): ?string
+    {
+        $raw = trim($raw);
+
+        // Canonical: 2025-P01
+        if (preg_match('/^\d{4}-P\d{2}$/', $raw)) {
+            return $raw;
+        }
+        // Missing zero-pad: 2025-P1
+        if (preg_match('/^(\d{4})-P(\d)$/', $raw, $m)) {
+            return $m[1] . '-P0' . $m[2];
+        }
+        // Old Pd format: Pd12-2025
+        if (preg_match('/^Pd(\d{1,2})-(\d{4})$/', $raw, $m)) {
+            return $m[2] . '-P' . str_pad($m[1], 2, '0', STR_PAD_LEFT);
+        }
+        // Period-first: P01-2025 or P1-2025
+        if (preg_match('/^P(\d{1,2})-(\d{4})$/', $raw, $m)) {
+            return $m[2] . '-P' . str_pad($m[1], 2, '0', STR_PAD_LEFT);
+        }
+
+        return null;
     }
 
     /**

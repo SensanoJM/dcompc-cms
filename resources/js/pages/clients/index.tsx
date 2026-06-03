@@ -194,7 +194,7 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
                 isOpen={modalOpen}
                 selectedClientIds={scheduledIds}
                 periods={periods}
-                defaultPeriod={filters.period !== 'all' ? filters.period : (periods[0] ?? '')}
+                defaultPeriod={filters.period || (periods[0] ?? '')}
                 onClose={() => setModalOpen(false)}
             />
             <DeleteClientsModal
@@ -206,8 +206,7 @@ export default function ClientsIndex({ clients, periods, mediators, filters }: P
             <ClientDetailSheet
                 clientId={selectedClient?.id ?? null}
                 clientName={selectedClient?.name ?? ''}
-                periods={periods}
-                defaultPeriod={filters.period !== 'all' ? filters.period : (periods[0] ?? '')}
+                defaultPeriod={filters.period || (periods[0] ?? '')}
                 onClose={closeSheet}
                 onSchedule={(ids) => { openBatchModal(ids); }}
                 onDelete={(c) => { openDeleteModal(c); }}
